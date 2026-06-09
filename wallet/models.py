@@ -13,6 +13,7 @@ Models for a pan-East African multi-currency wallet with:
 
 from django.db import models
 from django.contrib.auth.models import User
+from django.core.validators import RegexValidator
 from decimal import Decimal
 import secrets
 from typing import List, Tuple, Dict, Any
@@ -243,7 +244,11 @@ class Wallet(models.Model):
 
     wallet_id  = models.CharField(max_length=20, unique=True, editable=False, primary_key=True)
     user       = models.OneToOneField(User, on_delete=models.CASCADE, related_name='wallet')
-    phone      = models.CharField(max_length=20, unique=True)
+    phone_regex = RegexValidator(
+        regex=r'^(07|01)\d{8}$',
+        message='Phone number must start with 07 or 01 and contain exactly 10 digits.',
+    )
+    phone      = models.CharField(max_length=10, unique=True, validators=[phone_regex])
     pin_hash   = models.CharField(max_length=128)
     country    = models.CharField(max_length=2, choices=COUNTRY_CHOICES, default='KE')
     kyc_status = models.CharField(max_length=10, choices=KYC_CHOICES, default='pending')
@@ -584,7 +589,7 @@ class FeeRecord(models.Model):
 
 class MpesaTransaction(models.Model):
     wallet              = models.ForeignKey(Wallet, on_delete=models.CASCADE, related_name='mpesa_transactions')
-    phone               = models.CharField(max_length=20)
+    phone               = models.CharField(max_length=10, validators=[Wallet.phone_regex])
     amount              = models.DecimalField(max_digits=10, decimal_places=2)
     checkout_request_id = models.CharField(max_length=100, unique=True)
     merchant_request_id = models.CharField(max_length=100)
