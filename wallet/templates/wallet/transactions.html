@@ -1,0 +1,64 @@
+{% extends "wallet/base.html" %}
+{% block title %}Transactions — KWallet{% endblock %}
+{% block content %}
+<div class="page">
+  {% if messages %}<div class="msgs">{% for m in messages %}<div class="msg msg-{{ m.tags }}"><span class="msg-icon">ℹ️</span>{{ m }}</div>{% endfor %}</div>{% endif %}
+
+  <div class="ph"><h1>Transaction History</h1><p>Full audit trail of all wallet activity including fees collected.</p></div>
+
+  <form method="get" class="filter-bar">
+    <select class="fsel" name="currency" onchange="this.form.submit()">
+      <option value="">All Currencies</option>
+      {% for curr in currencies %}<option value="{{ curr }}" {% if currency_filter == curr %}selected{% endif %}>{{ curr }}</option>{% endfor %}
+    </select>
+    <select class="fsel" name="type" onchange="this.form.submit()">
+      <option value="">All Types</option>
+      <option value="mpesa_deposit"  {% if type_filter == 'mpesa_deposit'  %}selected{% endif %}>M-Pesa Deposit</option>
+      <option value="mpesa_withdraw" {% if type_filter == 'mpesa_withdraw' %}selected{% endif %}>M-Pesa Withdraw</option>
+      <option value="exchange"       {% if type_filter == 'exchange'       %}selected{% endif %}>Exchange</option>
+      <option value="p2p_send"       {% if type_filter == 'p2p_send'       %}selected{% endif %}>P2P Send</option>
+      <option value="p2p_receive"    {% if type_filter == 'p2p_receive'    %}selected{% endif %}>P2P Receive</option>
+    </select>
+    {% if currency_filter or type_filter %}<a href="{% url 'transactions' %}" class="btn btn-white btn-sm">✕ Clear</a>{% endif %}
+  </form>
+
+  <div class="tbl-wrap">
+    {% if txns %}
+    <table class="tbl">
+      <thead>
+        <tr><th>Type</th><th>Currency</th><th>Amount</th><th>Fee</th><th>Net</th><th>Status</th><th>Reference</th><th>Details</th><th>Date</th></tr>
+      </thead>
+      <tbody>
+        {% for txn in txns %}
+        <tr>
+          <td>
+            {% if 'mpesa' in txn.transaction_type %}<span class="badge bg-mpesa">{{ txn.transaction_type|upper }}</span>
+            {% elif txn.transaction_type == 'p2p_receive' %}<span class="badge bg-green">P2P RECEIVE</span>
+            {% elif txn.transaction_type == 'p2p_send' %}<span class="badge bg-red">P2P SEND</span>
+            {% elif txn.transaction_type == 'exchange' %}<span class="badge bg-blue">EXCHANGE</span>
+            {% else %}<span class="badge bg-amber">{{ txn.transaction_type|upper }}</span>{% endif %}
+          </td>
+          <td class="mono" style="font-weight:500">{{ txn.currency }}</td>
+          <td class="mono">{{ txn.amount|floatformat:4 }}</td>
+          <td class="mono" style="color:{% if txn.fee > 0 %}var(--amber){% else %}var(--ink30){% endif %}">{{ txn.fee|floatformat:4 }}</td>
+          <td class="mono" style="color:var(--green-dk)">{{ txn.net_amount|floatformat:4 }}</td>
+          <td>
+            {% if txn.status == 'completed' %}<span class="badge bg-green">Done</span>
+            {% elif txn.status == 'pending' %}<span class="badge bg-amber">Pending</span>
+            {% elif txn.status == 'refunded' %}<span class="badge bg-blue">Refunded</span>
+            {% else %}<span class="badge bg-red">Failed</span>{% endif %}
+          </td>
+          <td class="mono" style="font-size:.7rem;color:var(--ink30)">{{ txn.reference|default:"—"|truncatechars:14 }}</td>
+          <td style="color:var(--ink60);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.76rem">{{ txn.details }}</td>
+          <td class="mono" style="font-size:.72rem;color:var(--ink30);white-space:nowrap">{{ txn.created_at|date:"d M Y, H:i" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty"><div class="empty-icon">📭</div><p>No transactions found{% if currency_filter or type_filter %} for this filter{% endif %}.</p></div>
+    {% endif %}
+  </div>
+  <div style="margin-top:1.25rem"><a href="{% url 'dashboard' %}" class="btn btn-white btn-sm">← Dashboard</a></div>
+</div>
+{% endblock %}

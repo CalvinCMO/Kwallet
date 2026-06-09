@@ -1,0 +1,51 @@
+{% extends "wallet/base.html" %}
+{% block title %}P2P Transfer — KWallet{% endblock %}
+{% block content %}
+<div class="page-sm">
+  {% if messages %}<div class="msgs">{% for m in messages %}<div class="msg msg-{{ m.tags }}"><span class="msg-icon">{% if m.tags == 'success' %}✅{% else %}❌{% endif %}</span>{{ m }}</div>{% endfor %}</div>{% endif %}
+
+  <div class="ph"><h1>P2P Transfer</h1><p>Send any currency instantly to another KWallet user anywhere in East Africa.</p></div>
+
+  <div class="fee-box">💡 <strong>Transfer fee: 0.5%</strong> of the amount sent — deducted from your balance in addition to the transfer amount.</div>
+
+  <div class="card">
+    <div class="ibox">📱 <strong>Addressed by phone number</strong> — the recipient must have a registered KWallet account. Transfers settle instantly with no clearing delay.</div>
+    <form method="post">
+      {% csrf_token %}
+      <div class="fg">
+        <label class="fl">Recipient Phone Number</label>
+        <input class="fi" type="tel" name="recipient_phone" placeholder="0712 345 678" required>
+        {% for e in form.recipient_phone.errors %}<div class="fe">{{ e }}</div>{% endfor %}
+      </div>
+      <div class="fg2">
+        <div class="fg">
+          <label class="fl">Currency</label>
+          <select class="fs" name="currency" id="txCurr" onchange="updateFeePreview()">
+            {% for val, label in form.currency.field.choices %}<option value="{{ val }}">{{ label }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="fg">
+          <label class="fl">Amount</label>
+          <input class="fi" type="number" name="amount" id="txAmt" step="0.0001" min="0.01" placeholder="0.0000" required oninput="updateFeePreview()">
+          {% for e in form.amount.errors %}<div class="fe">{{ e }}</div>{% endfor %}
+        </div>
+      </div>
+      <div id="feePreview" style="display:none;background:var(--amber-lt);border:1.5px solid #fde68a;border-radius:var(--r8);padding:.75rem 1rem;margin-bottom:1rem;font-family:'DM Mono',monospace;font-size:.78rem;color:#78350f"></div>
+      <button type="submit" class="btn btn-primary btn-block">Send →</button>
+    </form>
+  </div>
+  <div style="margin-top:1rem;text-align:center"><a href="{% url 'dashboard' %}" class="btn btn-white btn-sm">← Dashboard</a></div>
+</div>
+<script>
+function updateFeePreview() {
+  const amt  = parseFloat(document.getElementById('txAmt').value);
+  const curr = document.getElementById('txCurr').value;
+  const el   = document.getElementById('feePreview');
+  if (!amt || amt <= 0) { el.style.display='none'; return; }
+  const fee   = Math.max(amt * 0.005, 5);
+  const total = amt + fee;
+  el.style.display = 'block';
+  el.textContent = `Send: ${amt.toFixed(4)} ${curr}  |  Fee: ${fee.toFixed(4)} ${curr} (0.5%)  |  Total deducted: ${total.toFixed(4)} ${curr}`;
+}
+</script>
+{% endblock %}

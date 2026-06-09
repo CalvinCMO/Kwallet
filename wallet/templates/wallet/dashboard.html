@@ -1,0 +1,132 @@
+{% extends "wallet/base.html" %}
+{% block title %}Dashboard — KWallet{% endblock %}
+{% block content %}
+<div class="page">
+
+  {% if messages %}
+  <div class="msgs">{% for m in messages %}<div class="msg msg-{{ m.tags }}"><span class="msg-icon">{% if m.tags == 'success' %}✅{% elif m.tags == 'error' %}❌{% elif m.tags == 'warning' %}⚠️{% else %}ℹ️{% endif %}</span>{{ m }}</div>{% endfor %}</div>
+  {% endif %}
+
+  <!-- Portfolio Banner -->
+  <div class="pb">
+    <div class="pb-l">
+      <div class="pb-greet">Good day,</div>
+      <div class="pb-name">{{ wallet.user.get_full_name }}</div>
+      <div class="pb-phone">{{ wallet.phone }} &nbsp;·&nbsp;
+        <span class="kyc {% if wallet.kyc_status == 'verified' %}kyc-v{% elif wallet.kyc_status == 'rejected' %}kyc-r{% else %}kyc-p{% endif %}">{{ wallet.kyc_status }}</span>
+      </div>
+    </div>
+    <div class="pb-r">
+      <div class="pb-lbl">Portfolio Value</div>
+      <div class="pb-val" id="portfolioVal">{{ home_currency }} {{ total_value }}</div>
+      <div class="pb-sub" id="rateStatus">Loading live rates…</div>
+    </div>
+  </div>
+
+  <!-- Balances -->
+  <div class="sec-row">
+    <span class="sec-label">Your Balances</span>
+    <a href="{% url 'add_currency' %}" class="btn btn-white btn-sm">+ Add Currency</a>
+  </div>
+  <div class="bal-grid" style="margin-bottom:2rem">
+    {% for curr, cb in balances.items %}
+    <div class="bal-card {% if curr == wallet.home_currency %}bal-home{% endif %}">
+      <div class="bal-flag">
+        {% if curr == 'KES' %}🇰🇪{% elif curr == 'TZS' %}🇹🇿{% elif curr == 'UGX' %}🇺🇬{% elif curr == 'RWF' %}🇷🇼{% elif curr == 'ETB' %}🇪🇹{% elif curr == 'USD' %}🇺🇸{% elif curr == 'EUR' %}🇪🇺{% elif curr == 'GBP' %}🇬🇧{% elif curr == 'JPY' %}🇯🇵{% elif curr == 'CNY' %}🇨🇳{% elif curr == 'AED' %}🇦🇪{% elif curr == 'INR' %}🇮🇳{% elif curr == 'CAD' %}🇨🇦{% elif curr == 'AUD' %}🇦🇺{% elif curr == 'CHF' %}🇨🇭{% elif curr == 'ZAR' %}🇿🇦{% elif curr == 'NGN' %}🇳🇬{% elif curr == 'GHS' %}🇬🇭{% else %}💱{% endif %}
+      </div>
+      <div class="bal-code">{{ curr }}</div>
+      <div class="bal-val">{{ cb.balance|floatformat:2 }}</div>
+      <div class="bal-usd" id="usd_{{ curr }}">—</div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <!-- Actions -->
+  <div class="sec-row"><span class="sec-label">Actions</span></div>
+  <div class="act-grid" style="margin-bottom:2.5rem">
+    <a href="{% url 'mpesa_deposit' %}"  class="act-btn act-mpesa"><span class="act-icon">📲</span>M-Pesa Deposit</a>
+    <a href="{% url 'mpesa_withdraw' %}" class="act-btn act-mpesa"><span class="act-icon">💸</span>M-Pesa Withdraw</a>
+    <a href="{% url 'exchange' %}"       class="act-btn act-exc"><span class="act-icon">🔄</span>Exchange</a>
+    <a href="{% url 'p2p' %}"            class="act-btn act-p2p"><span class="act-icon">↗️</span>P2P Transfer</a>
+  </div>
+
+  <!-- Fee schedule -->
+  <div class="sec-row"><span class="sec-label">Fee Schedule</span></div>
+  <div class="tbl-wrap" style="margin-bottom:2rem">
+    <table class="tbl">
+      <thead><tr><th>Operation</th><th>Fee</th><th>Note</th></tr></thead>
+      <tbody>
+        <tr><td>M-Pesa Deposit</td><td class="mono"><span class="badge bg-green">0%</span></td><td style="color:var(--ink60);font-size:.78rem">Free — we absorb it</td></tr>
+        <tr><td>M-Pesa Withdrawal</td><td class="mono">1%</td><td style="color:var(--ink60);font-size:.78rem">Min KES 10</td></tr>
+        <tr><td>Currency Exchange</td><td class="mono">1.5%</td><td style="color:var(--ink60);font-size:.78rem">On amount exchanged</td></tr>
+        <tr><td>P2P Transfer</td><td class="mono">0.5%</td><td style="color:var(--ink60);font-size:.78rem">Min KES 5 equivalent</td></tr>
+        <tr><td>Bank Deposit</td><td class="mono">0.5%</td><td style="color:var(--ink60);font-size:.78rem">On received amount</td></tr>
+        <tr><td>Bank Withdrawal</td><td class="mono">1.5%</td><td style="color:var(--ink60);font-size:.78rem">Min KES 50 equivalent</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Recent Transactions -->
+  <div class="sec-row">
+    <span class="sec-label">Recent Transactions</span>
+    <a href="{% url 'transactions' %}" class="btn btn-white btn-sm">View All</a>
+  </div>
+  <div class="tbl-wrap">
+    {% if recent_txns %}
+    <table class="tbl">
+      <thead><tr><th>Type</th><th>Currency</th><th>Amount</th><th>Fee</th><th>Status</th><th>Details</th><th>Date</th></tr></thead>
+      <tbody>
+        {% for txn in recent_txns %}
+        <tr>
+          <td>
+            {% if 'mpesa' in txn.transaction_type %}<span class="badge bg-mpesa">{{ txn.transaction_type|upper }}</span>
+            {% elif txn.transaction_type == 'p2p_receive' or txn.transaction_type == 'exchange' %}<span class="badge bg-green">{{ txn.transaction_type|upper }}</span>
+            {% elif txn.transaction_type == 'p2p_send' %}<span class="badge bg-red">{{ txn.transaction_type|upper }}</span>
+            {% else %}<span class="badge bg-blue">{{ txn.transaction_type|upper }}</span>{% endif %}
+          </td>
+          <td class="mono" style="font-weight:500">{{ txn.currency }}</td>
+          <td class="mono">{{ txn.amount|floatformat:2 }}</td>
+          <td class="mono" style="color:{% if txn.fee > 0 %}var(--amber){% else %}var(--ink30){% endif %}">{{ txn.fee|floatformat:2 }}</td>
+          <td>
+            {% if txn.status == 'completed' %}<span class="badge bg-green">Done</span>
+            {% elif txn.status == 'pending' %}<span class="badge bg-amber">Pending</span>
+            {% elif txn.status == 'refunded' %}<span class="badge bg-blue">Refunded</span>
+            {% else %}<span class="badge bg-red">Failed</span>{% endif %}
+          </td>
+          <td style="color:var(--ink60);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.78rem">{{ txn.details }}</td>
+          <td class="mono" style="color:var(--ink30);font-size:.73rem;white-space:nowrap">{{ txn.created_at|date:"d M, H:i" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty"><div class="empty-icon">📭</div><p>No transactions yet.<br>Deposit via M-Pesa to get started.</p></div>
+    {% endif %}
+  </div>
+</div>
+
+<script>
+const balances = { {% for curr, cb in balances.items %}"{{ curr }}": {{ cb.balance }},{% endfor %} };
+const homeCurr = "{{ home_currency }}";
+
+fetch("{% url 'rates_api' %}")
+  .then(r => r.json())
+  .then(rates => {
+    document.getElementById('rateStatus').textContent = '● Live rates (ECB)';
+    document.getElementById('rateStatus').style.color = '#4ade80';
+    let total = 0;
+    Object.entries(balances).forEach(([curr, bal]) => {
+      const el = document.getElementById('usd_' + curr);
+      if (!el) return;
+      if (curr === homeCurr) { total += bal; if (el) el.textContent = ''; return; }
+      const rate = parseFloat(rates[curr + '_' + homeCurr]);
+      if (rate) {
+        total += bal * rate;
+        el.textContent = '≈ ' + homeCurr + ' ' + (bal * rate).toFixed(2);
+      }
+    });
+    document.getElementById('portfolioVal').textContent = homeCurr + ' ' + total.toFixed(2);
+  })
+  .catch(() => { document.getElementById('rateStatus').textContent = 'Indicative rates'; });
+</script>
+{% endblock %}

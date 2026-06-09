@@ -1,0 +1,34 @@
+{% extends "wallet/base.html" %}
+{% block title %}Sign In — KWallet{% endblock %}
+{% block content %}
+<div class="page-auth">
+  <div class="auth-hero">
+    <div class="auth-logo">💳</div>
+    <h1 class="auth-h1">Welcome back</h1>
+    <p class="auth-sub">Sign in to your KWallet account</p>
+  </div>
+
+  {% if messages %}
+  <div class="msgs">{% for m in messages %}<div class="msg msg-{{ m.tags }}"><span class="msg-icon">{% if m.tags == 'success' %}✅{% elif m.tags == 'error' %}❌{% else %}ℹ️{% endif %}</span>{{ m }}</div>{% endfor %}</div>
+  {% endif %}
+
+  <div class="card">
+    <form method="post">
+      {% csrf_token %}
+      <div class="fg">
+        <label class="fl">Phone Number</label>
+        <input class="fi" type="tel" name="phone" placeholder="0712 345 678" required autocomplete="tel">
+        {% for e in form.phone.errors %}<div class="fe">{{ e }}</div>{% endfor %}
+      </div>
+      <div class="fg">
+        <label class="fl">PIN</label>
+        <input class="fi" type="password" name="pin" placeholder="••••••" maxlength="6" required autocomplete="current-password">
+        {% for e in form.pin.errors %}<div class="fe">{{ e }}</div>{% endfor %}
+      </div>
+      {% if form.non_field_errors %}<div class="msg msg-error" style="margin-bottom:1rem"><span class="msg-icon">❌</span>{{ form.non_field_errors }}</div>{% endif %}
+      <button type="submit" class="btn btn-primary btn-block" style="margin-top:.5rem">Sign In →</button>
+    </form>
+  </div>
+  <div class="auth-foot">No wallet yet? <a href="{% url 'register' %}">Create one free</a></div>
+</div>
+{% endblock %}

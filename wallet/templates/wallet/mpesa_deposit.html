@@ -1,0 +1,47 @@
+{% extends "wallet/base.html" %}
+{% block title %}M-Pesa Deposit — KWallet{% endblock %}
+{% block content %}
+<div class="page-sm">
+  {% if messages %}<div class="msgs">{% for m in messages %}<div class="msg msg-{{ m.tags }}"><span class="msg-icon">{% if m.tags == 'success' %}✅{% elif m.tags == 'error' %}❌{% else %}ℹ️{% endif %}</span>{{ m }}</div>{% endfor %}</div>{% endif %}
+
+  <div class="ph"><h1>M-Pesa Deposit</h1><p>Fund your KES balance via Lipa Na M-Pesa Online.</p></div>
+
+  <div class="card">
+    <div style="display:flex;align-items:center;gap:.75rem;background:linear-gradient(135deg,#f0fdf4,#dcfce7);border:1.5px solid var(--green-md);border-radius:var(--r12);padding:.85rem 1.1rem;margin-bottom:1.5rem">
+      <div style="width:36px;height:36px;background:linear-gradient(135deg,#16a34a,#15803d);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:1.1rem;flex-shrink:0">📲</div>
+      <div>
+        <div style="font-weight:700;font-size:.84rem;color:var(--green-dk)">Lipa Na M-Pesa Online (STK Push)</div>
+        <div style="font-size:.74rem;color:var(--ink60);margin-top:.15rem">You'll receive a PIN prompt on your phone. Funds credit to your <strong>KES balance</strong> instantly after confirmation.</div>
+      </div>
+    </div>
+
+    <div class="fee-box" style="margin-bottom:1.25rem">🎉 <strong>Deposit fee: FREE</strong> — KWallet absorbs the M-Pesa cost on deposits to encourage saving.</div>
+
+    <form method="post">
+      {% csrf_token %}
+      <div class="fg">
+        <label class="fl">Amount (KES)</label>
+        <input class="fi" type="number" name="amount" step="1" min="10" placeholder="e.g. 500" required id="depAmt" oninput="updateDepPreview()">
+        {% for e in form.amount.errors %}<div class="fe">{{ e }}</div>{% endfor %}
+        <div class="fh">Minimum: KES 10</div>
+      </div>
+      <div id="depPreview" style="display:none;background:var(--green-lt);border:1.5px solid var(--green-md);border-radius:var(--r8);padding:.75rem 1rem;margin-bottom:1rem;font-family:'DM Mono',monospace;font-size:.82rem;color:var(--green-dk)"></div>
+      <div class="fg">
+        <label class="fl">M-Pesa Phone <span style="text-transform:none;letter-spacing:0;font-weight:400;color:var(--ink30);font-size:.7rem">(leave blank to use {{ wallet.phone }})</span></label>
+        <input class="fi" type="tel" name="phone" placeholder="{{ wallet.phone }}">
+      </div>
+      <button type="submit" class="btn btn-mpesa btn-block">📲 &nbsp;Send STK Push</button>
+    </form>
+  </div>
+  <div style="margin-top:1rem;text-align:center"><a href="{% url 'dashboard' %}" class="btn btn-white btn-sm">← Dashboard</a></div>
+</div>
+<script>
+function updateDepPreview() {
+  const amt = parseFloat(document.getElementById('depAmt').value);
+  const el  = document.getElementById('depPreview');
+  if (!amt || amt < 10) { el.style.display='none'; return; }
+  el.style.display = 'block';
+  el.textContent = `You pay: KES ${amt.toFixed(0)}  |  Fee: FREE  |  KES balance credited: ${amt.toFixed(0)}`;
+}
+</script>
+{% endblock %}
