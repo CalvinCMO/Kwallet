@@ -18,7 +18,7 @@ DEBUG = True
 ALLOWED_HOSTS = ['*']
 
 CSRF_TRUSTED_ORIGINS = [
-    'kwallet-production-c0bd.up.railway.app',
+    'http://kwallet-production-c0bd.up.railway.app',
     'http://127.0.0.1:8000',
     'http://localhost:8000',
 ]
