@@ -18,9 +18,13 @@ DEBUG = True
 ALLOWED_HOSTS = ['*']
 
 CSRF_TRUSTED_ORIGINS = [
+    'kwallet-production-c0bd.up.railway.app',
     'http://127.0.0.1:8000',
     'http://localhost:8000',
 ]
+
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
 _ngrok = os.getenv('NGROK_URL')
 if _ngrok and _ngrok not in CSRF_TRUSTED_ORIGINS:
     CSRF_TRUSTED_ORIGINS.append(_ngrok)
