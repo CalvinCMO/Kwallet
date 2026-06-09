@@ -14,10 +14,31 @@ Models for a pan-East African multi-currency wallet with:
 from django.db import models
 from django.contrib.auth.models import User
 from django.core.validators import RegexValidator
+from django.core.exceptions import ValidationError
 from decimal import Decimal
 import secrets
 from typing import List, Tuple, Dict, Any
 from django.utils import timezone
+
+
+# ── Shared phone-number validator ─────────────────────────────────────────────
+# Kenyan format: starts with 07 or 01, exactly 10 digits total.
+# Defined at module level so every model that stores a phone number can
+# reference the same validator — Wallet, MpesaTransaction, and PaymentMethod
+# phone-based rails all use this.
+PHONE_REGEX = RegexValidator(
+    regex=r'^(07|01)\d{8}$',
+    message='Phone number must start with 07 or 01 and contain exactly 10 digits.',
+)
+
+# Rails that carry a phone number as their identifier (vs. a bank account number)
+PHONE_RAILS = {
+    'mpesa_ke', 'mpesa_tz',
+    'mtn_ug', 'mtn_rw',
+    'airtel_ke', 'airtel_tz', 'airtel_ug',
+    'tigopesa',
+    'telebirr',
+}
 
 
 # ── All supported currencies ──────────────────────────────────────────────────
@@ -244,17 +265,26 @@ class Wallet(models.Model):
 
     wallet_id  = models.CharField(max_length=20, unique=True, editable=False, primary_key=True)
     user       = models.OneToOneField(User, on_delete=models.CASCADE, related_name='wallet')
-    phone_regex = RegexValidator(
-        regex=r'^(07|01)\d{8}$',
-        message='Phone number must start with 07 or 01 and contain exactly 10 digits.',
-    )
-    phone      = models.CharField(max_length=10, unique=True, validators=[phone_regex])
+    phone      = models.CharField(max_length=10, unique=True, validators=[PHONE_REGEX])
     pin_hash   = models.CharField(max_length=128)
     country    = models.CharField(max_length=2, choices=COUNTRY_CHOICES, default='KE')
     kyc_status = models.CharField(max_length=10, choices=KYC_CHOICES, default='pending')
     created_at = models.DateTimeField(auto_now_add=True)
 
+    def clean(self):
+        """Run field-level validators explicitly so phone format is enforced
+        even when .save() is called directly (e.g. from management commands
+        or the Django shell), not only via ModelForm."""
+        super().clean()
+        try:
+            PHONE_REGEX(self.phone)
+        except ValidationError as exc:
+            raise ValidationError({'phone': exc.messages})
+
     def save(self, *args, **kwargs):
+        # Always validate phone before persisting — guards programmatic saves
+        # that bypass form validation.
+        self.full_clean()
         if not self.wallet_id:
             self.wallet_id = 'kwl_' + secrets.token_hex(6)
         super().save(*args, **kwargs)
@@ -333,6 +363,24 @@ class PaymentMethod(models.Model):
 
     class Meta:
         unique_together = ('wallet', 'rail', 'identifier')
+
+    def clean(self):
+        """Validate that phone-based rails carry a properly formatted phone number."""
+        super().clean()
+        if self.rail in PHONE_RAILS:
+            try:
+                PHONE_REGEX(self.identifier)
+            except ValidationError:
+                raise ValidationError({
+                    'identifier': (
+                        f"The '{self.get_rail_display()}' rail requires a valid phone number "
+                        f"(starts with 07 or 01, exactly 10 digits). Got: '{self.identifier}'."
+                    )
+                })
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.label} ({self.rail}) — {self.identifier}"
@@ -589,7 +637,7 @@ class FeeRecord(models.Model):
 
 class MpesaTransaction(models.Model):
     wallet              = models.ForeignKey(Wallet, on_delete=models.CASCADE, related_name='mpesa_transactions')
-    phone               = models.CharField(max_length=10, validators=[Wallet.phone_regex])
+    phone               = models.CharField(max_length=10, validators=[PHONE_REGEX])
     amount              = models.DecimalField(max_digits=10, decimal_places=2)
     checkout_request_id = models.CharField(max_length=100, unique=True)
     merchant_request_id = models.CharField(max_length=100)
