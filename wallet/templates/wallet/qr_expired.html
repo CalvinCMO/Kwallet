@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Link Expired — KWallet</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,600;9..144,800&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    body{background:#F8F7F4;color:#111827;font-family:'DM Sans',sans-serif;min-height:100vh;
+         display:flex;align-items:center;justify-content:center;padding:1.5rem;text-align:center}
+    .wrap{max-width:400px}
+    .icon{font-size:3.5rem;margin-bottom:1rem}
+    h2{font-family:'Fraunces',serif;font-size:1.5rem;font-weight:800;letter-spacing:-.03em;margin-bottom:.5rem}
+    p{color:#6B7280;font-size:.9rem;line-height:1.6}
+    .badge{display:inline-block;margin-top:.75rem;padding:.25rem .75rem;border-radius:20px;
+           font-size:.75rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+           background:#FEE2E2;color:#991b1b}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="icon">🔗</div>
+  <h2>This payment link is no longer active</h2>
+  <p>
+    {% if pr.status == 'paid' %}
+      This was a one-time payment link and has already been used.
+    {% elif pr.status == 'expired' %}
+      This payment link has expired.
+    {% else %}
+      This payment link has been disabled by the owner.
+    {% endif %}
+    <br>Please contact the person who shared it with you.
+  </p>
+  <div class="badge">{{ pr.status|upper }}</div>
+</div>
+</body>
+</html>

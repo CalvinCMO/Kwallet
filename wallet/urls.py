@@ -22,6 +22,23 @@ urlpatterns = [
     path('mpesa/query/<str:checkout_id>/',   views.stk_query,           name='stk_query'),
 ]
 
+# ── QR Payment URLs ───────────────────────────────────────────────────────────
+# Authenticated (wallet owner manages their payment requests)
+urlpatterns += [
+    path('qr/',                          views.qr_payment_list,    name='qr_payment_list'),
+    path('qr/create/',                   views.qr_payment_create,  name='qr_payment_create'),
+    path('qr/<str:token>/',              views.qr_payment_detail,  name='qr_payment_detail'),
+    path('qr/<str:token>/disable/',      views.qr_payment_disable, name='qr_payment_disable'),
+]
+
+# Public (payer — no login required)
+urlpatterns += [
+    path('pay/<str:token>/',                              views.qr_pay_view,    name='qr_pay'),
+    path('pay/<str:token>/pending/<str:checkout_id>/',    views.qr_pay_pending, name='qr_pay_pending'),
+    path('pay/<str:token>/status/<str:checkout_id>/',     views.qr_pay_status,  name='qr_pay_status'),
+    path('pay/<str:token>/success/',                      views.qr_pay_success, name='qr_pay_success'),
+]
+
 from django.conf import settings
 if settings.DEBUG:
     urlpatterns += [

@@ -745,3 +745,200 @@ def health_check(request):
         'mock_mode':   dj_settings.MPESA_CONFIG.get('USE_MOCK', False),
         'version':     '2.0.0',
     })
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# QR PAYMENT FEATURE
+# ══════════════════════════════════════════════════════════════════════════════
+
+import io
+import base64
+import qrcode
+from qrcode.image.pure import PyPNGImage
+
+from .models import PaymentRequest
+
+
+# ── helpers ───────────────────────────────────────────────────────────────────
+
+def _build_qr_image(url: str) -> str:
+    """
+    Generates a QR code for the given URL and returns it as a
+    base64-encoded PNG data URI ready for embedding in an <img> tag.
+    """
+    qr = qrcode.QRCode(
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_H,
+        box_size=10,
+        border=4,
+    )
+    qr.add_data(url)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color='#111827', back_color='white')
+    buf = io.BytesIO()
+    img.save(buf, format='PNG')
+    b64 = base64.b64encode(buf.getvalue()).decode('utf-8')
+    return f'data:image/png;base64,{b64}'
+
+
+# ── Create / manage payment requests (wallet owner) ───────────────────────────
+
+@wallet_required
+def qr_payment_list(request):
+    """Dashboard of all payment requests the wallet owner has created."""
+    wallet   = request.wallet
+    requests = wallet.payment_requests.all()
+    return render(request, 'wallet/qr_list.html', {
+        'wallet':   wallet,
+        'requests': requests,
+    })
+
+
+@wallet_required
+def qr_payment_create(request):
+    """Form to create a new payment request and display its QR code."""
+    wallet = request.wallet
+
+    if request.method == 'POST':
+        form = PaymentRequestForm(request.POST)
+        if form.is_valid():
+            pr = form.save(commit=False)
+            pr.wallet = wallet
+            pr.save()
+            messages.success(request, 'Payment link created.')
+            return redirect('qr_payment_detail', token=pr.token)
+    else:
+        form = PaymentRequestForm()
+
+    return render(request, 'wallet/qr_create.html', {
+        'wallet': wallet,
+        'form':   form,
+    })
+
+
+@wallet_required
+def qr_payment_detail(request, token):
+    """Shows the QR code and shareable link for an existing payment request."""
+    wallet = request.wallet
+    pr     = get_object_or_404(PaymentRequest, token=token, wallet=wallet)
+
+    pay_url  = request.build_absolute_uri(f'/pay/{pr.token}/')
+    qr_image = _build_qr_image(pay_url)
+
+    return render(request, 'wallet/qr_detail.html', {
+        'wallet':   wallet,
+        'pr':       pr,
+        'pay_url':  pay_url,
+        'qr_image': qr_image,
+    })
+
+
+@wallet_required
+def qr_payment_disable(request, token):
+    """Disables (deactivates) a payment request."""
+    wallet = request.wallet
+    pr     = get_object_or_404(PaymentRequest, token=token, wallet=wallet)
+    if request.method == 'POST':
+        pr.status = 'disabled'
+        pr.save()
+        messages.success(request, 'Payment link disabled.')
+    return redirect('qr_payment_list')
+
+
+# ── Public pay page (payer — no login required) ───────────────────────────────
+
+def qr_pay_view(request, token):
+    """
+    Public page anyone lands on after scanning a QR code.
+    Shows recipient info, pre-fills amount if fixed, takes payer phone number,
+    and fires an STK push against the payer's M-Pesa.
+    No KWallet account required for the payer.
+    """
+    pr = get_object_or_404(PaymentRequest, token=token)
+
+    # Check validity (handles expiry + single-use + disabled)
+    if not pr.is_valid:
+        return render(request, 'wallet/qr_expired.html', {'pr': pr})
+
+    recipient_name = pr.wallet.user.first_name + ' ' + pr.wallet.user.last_name[0] + '.'
+
+    if request.method == 'POST':
+        form = QRPayForm(request.POST, fixed_amount=pr.amount)
+        if form.is_valid():
+            phone  = form.cleaned_data['phone']
+            amount = form.cleaned_data['amount']
+
+            # Fire STK push — payer's phone will receive the M-Pesa PIN prompt
+            client = MpesaClient()
+            result = client.stk_push(
+                phone=phone,
+                amount=float(amount),
+                account_ref=pr.token,          # used in callback to identify the PaymentRequest
+                description=pr.note or f'Pay {pr.wallet.user.first_name}',
+            )
+
+            if result['success']:
+                checkout_id = result['checkout_request_id']
+                # Store a MpesaTransaction linked to the RECIPIENT's wallet
+                MpesaTransaction.objects.create(
+                    wallet=pr.wallet,
+                    phone=phone,
+                    amount=amount,
+                    checkout_request_id=checkout_id,
+                    merchant_request_id=result.get('merchant_request_id', ''),
+                    direction='in',
+                    status='pending',
+                )
+                return redirect('qr_pay_pending', token=token, checkout_id=checkout_id)
+            else:
+                form.add_error(None, result.get('message', 'M-Pesa request failed. Please try again.'))
+    else:
+        form = QRPayForm(fixed_amount=pr.amount)
+
+    return render(request, 'wallet/qr_pay.html', {
+        'pr':             pr,
+        'form':           form,
+        'recipient_name': recipient_name,
+        'fixed':          pr.amount is not None,
+    })
+
+
+def qr_pay_pending(request, token, checkout_id):
+    """
+    Waiting page shown to the payer after the STK push fires.
+    Polls /pay/<token>/status/<checkout_id>/ every 3 seconds.
+    """
+    pr = get_object_or_404(PaymentRequest, token=token)
+    return render(request, 'wallet/qr_pay_pending.html', {
+        'pr':          pr,
+        'checkout_id': checkout_id,
+        'token':       token,
+    })
+
+
+def qr_pay_status(request, token, checkout_id):
+    """
+    JSON polling endpoint called by qr_pay_pending.html every 3 seconds.
+    Returns the current status of the MpesaTransaction.
+    """
+    try:
+        mpesa_txn = MpesaTransaction.objects.get(
+            checkout_request_id=checkout_id,
+            wallet__payment_requests__token=token,
+        )
+        return JsonResponse({
+            'status':  mpesa_txn.status,
+            'receipt': mpesa_txn.mpesa_receipt,
+        })
+    except MpesaTransaction.DoesNotExist:
+        return JsonResponse({'status': 'pending', 'receipt': ''})
+
+
+def qr_pay_success(request, token):
+    """Thank-you page shown to the payer after payment is confirmed."""
+    pr = get_object_or_404(PaymentRequest, token=token)
+    recipient_name = pr.wallet.user.first_name + ' ' + pr.wallet.user.last_name[0] + '.'
+    return render(request, 'wallet/qr_pay_success.html', {
+        'pr':             pr,
+        'recipient_name': recipient_name,
+    })

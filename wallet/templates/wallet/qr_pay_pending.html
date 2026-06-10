@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Waiting for Payment — KWallet</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,600;9..144,800&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root{
+      --white:#fff;--off:#F8F7F4;
+      --green:#16A34A;--green-lt:#DCFCE7;--green-md:#BBF7D0;--green-dk:#14532D;
+      --coral:#EF4444;--coral-lt:#FEE2E2;
+      --ink:#111827;--ink60:#6B7280;--ink30:#D1D5DB;--ink10:#F3F4F6;
+      --r8:8px;--r12:12px;--r16:16px;
+    }
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    body{background:var(--off);color:var(--ink);font-family:'DM Sans',sans-serif;min-height:100vh;
+         display:flex;align-items:center;justify-content:center;padding:1.5rem}
+    .wrap{width:100%;max-width:420px;text-align:center}
+    .logo{display:flex;align-items:center;gap:.5rem;justify-content:center;margin-bottom:2rem;text-decoration:none}
+    .logo-icon{width:38px;height:38px;background:linear-gradient(135deg,var(--green),#0f9939);border-radius:10px;
+               display:flex;align-items:center;justify-content:center;font-size:1.1rem}
+    .logo-name{font-family:'Fraunces',serif;font-size:1.25rem;font-weight:800;color:var(--ink);letter-spacing:-.03em}
+    .logo-name span{color:var(--green)}
+    .card{background:var(--white);border:1.5px solid var(--ink10);border-radius:var(--r16);padding:2.5rem 2rem;
+          box-shadow:0 4px 24px rgba(0,0,0,.08)}
+    .pulse-wrap{width:72px;height:72px;background:var(--green-lt);border-radius:50%;
+                display:flex;align-items:center;justify-content:center;margin:0 auto 1.5rem;position:relative}
+    .pulse-wrap::before{content:'';position:absolute;inset:-8px;border-radius:50%;
+                        border:2px solid var(--green);animation:ring 1.5s ease-out infinite}
+    .pulse-dot{font-size:2rem}
+    @keyframes ring{0%{opacity:1;transform:scale(1)}100%{opacity:0;transform:scale(1.7)}}
+    h2{font-family:'Fraunces',serif;font-size:1.4rem;font-weight:800;letter-spacing:-.03em;margin-bottom:.6rem}
+    p{color:var(--ink60);font-size:.9rem;line-height:1.6}
+    .status-box{background:var(--ink10);border-radius:var(--r8);padding:.85rem 1rem;
+                margin-top:1.5rem;font-family:'DM Mono',monospace;font-size:.82rem;color:var(--ink60)}
+    #statusText{color:var(--ink);font-weight:500}
+    .error-box{background:var(--coral-lt);border:1.5px solid #fecaca;border-radius:var(--r8);
+               padding:.85rem 1rem;margin-top:1.5rem;font-size:.85rem;color:#991b1b;display:none}
+    .btn-retry{display:inline-flex;align-items:center;gap:.4rem;padding:.6rem 1.4rem;border:none;
+               border-radius:var(--r8);font-family:'DM Sans',sans-serif;font-size:.84rem;font-weight:600;
+               cursor:pointer;background:var(--green);color:#fff;margin-top:1rem;text-decoration:none}
+  </style>
+</head>
+<body>
+<div class="wrap">
+
+  <a href="/" class="logo">
+    <div class="logo-icon">💳</div>
+    <span class="logo-name">K<span>Wallet</span></span>
+  </a>
+
+  <div class="card">
+    <div class="pulse-wrap"><div class="pulse-dot">📲</div></div>
+
+    <h2>Check Your Phone</h2>
+    <p>
+      An M-Pesa payment request has been sent to your phone.<br>
+      <strong>Open M-Pesa and enter your PIN</strong> to complete the payment.
+    </p>
+
+    <div class="status-box">
+      Status: <span id="statusText">Waiting for confirmation…</span>
+    </div>
+
+    <div class="error-box" id="errorBox">
+      ❌ Payment was cancelled or failed. <a href="{% url 'qr_pay' token %}" class="btn-retry">Try Again</a>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const statusUrl  = "{% url 'qr_pay_status' token checkout_id %}";
+const successUrl = "{% url 'qr_pay_success' token %}";
+let   attempts   = 0;
+const MAX        = 40;   // ~2 minutes of polling
+
+function poll() {
+  if (attempts >= MAX) {
+    document.getElementById('statusText').textContent = 'Timed out — please try again.';
+    document.getElementById('errorBox').style.display = 'block';
+    return;
+  }
+  attempts++;
+
+  fetch(statusUrl)
+    .then(r => r.json())
+    .then(data => {
+      if (data.status === 'completed') {
+        document.getElementById('statusText').textContent = '✅ Payment confirmed!';
+        window.location.href = successUrl;
+      } else if (data.status === 'failed') {
+        document.getElementById('statusText').textContent = 'Payment failed.';
+        document.getElementById('errorBox').style.display = 'block';
+      } else {
+        setTimeout(poll, 3000);
+      }
+    })
+    .catch(() => setTimeout(poll, 3000));
+}
+
+setTimeout(poll, 3000);
+</script>
+</body>
+</html>
