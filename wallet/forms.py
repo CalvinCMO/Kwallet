@@ -67,7 +67,7 @@ class LoginForm(forms.Form):
 class ExchangeForm(forms.Form):
     from_currency = forms.ChoiceField(choices=ALL_CURRENCY_CHOICES, label='From')
     to_currency   = forms.ChoiceField(choices=ALL_CURRENCY_CHOICES, label='To')
-    amount        = forms.DecimalField(min_value=0.01, decimal_places=4)
+    amount        = forms.DecimalField(min_value=0.01, decimal_places=2)
 
     def clean(self):
         cleaned = super().clean()
@@ -79,7 +79,7 @@ class ExchangeForm(forms.Form):
 class P2PTransferForm(forms.Form):
     recipient_phone = forms.CharField(max_length=15, label='Recipient Phone Number')
     currency        = forms.ChoiceField(choices=ALL_CURRENCY_CHOICES)
-    amount          = forms.DecimalField(min_value=0.01, decimal_places=4)
+    amount          = forms.DecimalField(min_value=0.01, decimal_places=2)
 
     def clean_recipient_phone(self):
         phone = self.cleaned_data['recipient_phone'].strip()
@@ -127,7 +127,7 @@ class AddCurrencyForm(forms.Form):
         return currency
 
 
-# ── QR Payment Forms ──────────────────────────────────────────────────────────
+# ── QR Payment Forms ────────────────────────────────────────────────────────
 
 from .models import PaymentRequest, PHONE_REGEX
 from django.utils import timezone
@@ -216,6 +216,14 @@ class QRPayForm(forms.Form):
             self.fields['amount'].help_text = 'Amount set by the payee — cannot be changed.'
 
     def clean_phone(self):
+        """
+        Validate phone number using the PHONE_REGEX validator.
+        PHONE_REGEX is a RegexValidator object from models.py.
+        """
         phone = self.cleaned_data.get('phone', '').strip()
-        PHONE_REGEX(phone)   # raises ValidationError if invalid
+        # RegexValidator raises ValidationError if validation fails
+        try:
+            PHONE_REGEX(phone)
+        except forms.ValidationError:
+            raise forms.ValidationError('Invalid phone number. Must be 10 digits starting with 07 or 01.')
         return phone

@@ -20,7 +20,7 @@ class WalletAdmin(admin.ModelAdmin):
     readonly_fields = ('wallet_id', 'created_at')
 
 
-# ── CurrencyBalance ──────────��──────────────────────────────────────────────[...]
+# ── CurrencyBalance ─────────────────────────────────────────────────────────[...]
 
 @admin.register(CurrencyBalance)
 class CurrencyBalanceAdmin(admin.ModelAdmin):
