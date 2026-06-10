@@ -18,7 +18,7 @@ from django.views.decorators.http import require_POST
 from .forms import (
     AddCurrencyForm, ExchangeForm, LoginForm,
     MpesaDepositForm, MpesaWithdrawForm,
-    P2PTransferForm, RegisterForm,PaymentRequestForm,ExchangeForm,QrPayForm,
+    P2PTransferForm, RegisterForm,PaymentRequestForm,ExchangeForm,QRPayForm,
 )
 from .models import (
     ALL_CURRENCIES, COUNTRY_HOME_CURRENCY, FEE_SCHEDULE, UNIVERSAL_CURRENCIES,
