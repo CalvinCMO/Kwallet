@@ -10,7 +10,7 @@ from .models import (
 )
 
 
-# ── Wallet ─────────────────────────────────────────────────────────────────────
+# ── Wallet ────────────────────────────────────────────────────────────[...]
 
 @admin.register(Wallet)
 class WalletAdmin(admin.ModelAdmin):
@@ -20,7 +20,7 @@ class WalletAdmin(admin.ModelAdmin):
     readonly_fields = ('wallet_id', 'created_at')
 
 
-# ── CurrencyBalance ────────────────────────────────────────────────────────────
+# ── CurrencyBalance ──────────��──────────────────────────────────────────────[...]
 
 @admin.register(CurrencyBalance)
 class CurrencyBalanceAdmin(admin.ModelAdmin):
@@ -30,7 +30,7 @@ class CurrencyBalanceAdmin(admin.ModelAdmin):
     search_fields = ('wallet__phone',)
 
 
-# ── Transaction ────────────────────────────────────────────────────────────────
+# ── Transaction ──────────────────────────────────────────────────────────
 
 @admin.register(Transaction)
 class TransactionAdmin(admin.ModelAdmin):
@@ -41,7 +41,7 @@ class TransactionAdmin(admin.ModelAdmin):
     readonly_fields = ('reference', 'created_at', 'updated_at')
 
 
-# ── FeeRecord ─────────────────────────────────────────────────────────────────
+# ── FeeRecord ───────────────────────────────────────────────────────────[...]
 
 @admin.register(FeeRecord)
 class FeeRecordAdmin(admin.ModelAdmin):
@@ -61,7 +61,7 @@ class FeeRecordAdmin(admin.ModelAdmin):
         return format_html('<span style="color:orange">⏳ Unsettled</span>')
 
 
-# ── MpesaTransaction ───────────────────────────────────────────────────────────
+# ── MpesaTransaction ────────────────────────────────────────────────────────
 
 @admin.register(MpesaTransaction)
 class MpesaTransactionAdmin(admin.ModelAdmin):
@@ -72,7 +72,7 @@ class MpesaTransactionAdmin(admin.ModelAdmin):
     readonly_fields = ('created_at', 'updated_at')
 
 
-# ── PaymentMethod ─────────────────────────────────────────────────────────────
+# ── PaymentMethod ────────────────────────────────────────────────────────
 
 @admin.register(PaymentMethod)
 class PaymentMethodAdmin(admin.ModelAdmin):
@@ -82,7 +82,7 @@ class PaymentMethodAdmin(admin.ModelAdmin):
     search_fields = ('wallet__phone', 'identifier')
 
 
-# ── WalletLimit ────────────────────────────────────────────────────────────────
+# ── WalletLimit ──────────────────────────────────────────────────────────
 
 @admin.register(WalletLimit)
 class WalletLimitAdmin(admin.ModelAdmin):
@@ -97,7 +97,7 @@ class WalletLimitAdmin(admin.ModelAdmin):
         return f"${obj.effective_daily_limit_usd}"
 
 
-# ── CompanyAccount ─────────────────────────────────────────────────────────────
+# ── CompanyAccount ────────────────────────────────────────────────────────
 
 @admin.register(CompanyAccount)
 class CompanyAccountAdmin(admin.ModelAdmin):
@@ -153,7 +153,7 @@ class CompanyAccountAdmin(admin.ModelAdmin):
         )
 
 
-# ── FeeSettlement ──────────────────────────────────────────────────────────────
+# ── FeeSettlement ────────────────────────────────────────────────────────
 
 @admin.register(FeeSettlement)
 class FeeSettlementAdmin(admin.ModelAdmin):
@@ -174,21 +174,21 @@ class FeeSettlementAdmin(admin.ModelAdmin):
 
     @admin.display(description='Status')
     def status_badge(self, obj):
-        colours = {
+        colors = {
             'completed': 'green',
             'pending':   'orange',
             'failed':    'red',
         }
         icons = {'completed': '✅', 'pending': '⏳', 'failed': '❌'}
-        colour = colours.get(obj.status, 'grey')
+        color = colors.get(obj.status, 'grey')
         icon   = icons.get(obj.status, '?')
         return format_html(
             '<span style="color:{};font-weight:bold">{} {}</span>',
-            colour, icon, obj.get_status_display(),
+            color, icon, obj.get_status_display(),
         )
 
 
-# ── PoolLedger ─────────────────────────────────────────────────────────────────
+# ── PoolLedger ───────────────────────────────────────────────────────────
 
 @admin.register(PoolLedger)
 class PoolLedgerAdmin(admin.ModelAdmin):
