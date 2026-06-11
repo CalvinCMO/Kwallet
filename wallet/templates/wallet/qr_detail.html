@@ -1,79 +1,83 @@
 {% extends "wallet/base.html" %}
 {% block title %}Payment Link — KWallet{% endblock %}
+{% block nav_profile %}active{% endblock %}
 {% block content %}
-<div class="page-sm">
-  {% if messages %}<div class="msgs">{% for m in messages %}<div class="msg msg-{{ m.tags }}">{{ m }}</div>{% endfor %}</div>{% endif %}
-
-  <div class="ph">
-    <h1>Your QR Code</h1>
-    <p>Anyone who scans this code can pay you directly via M-Pesa — no app needed.</p>
-  </div>
-
-  {% if pr.status != 'active' %}
-  <div class="msg msg-warning" style="margin-bottom:1.5rem">
-    ⚠️ This payment link is <strong>{{ pr.status }}</strong> and no longer accepting payments.
-  </div>
-  {% endif %}
-
-  <div class="card" style="text-align:center;padding:2rem;margin-bottom:1rem">
-    <img src="{{ qr_image }}" alt="Payment QR Code"
-         style="width:220px;height:220px;border-radius:var(--r12);border:6px solid var(--bg);display:block;margin:0 auto 1.5rem"/>
-    {% if pr.note %}
-    <div style="font-size:1.15rem;font-weight:700;margin-bottom:.4rem">{{ pr.note }}</div>
-    {% endif %}
-    {% if pr.amount %}
-    <div class="mono" style="font-size:1.6rem;font-weight:600;color:var(--teal)">KES {{ pr.amount|floatformat:0 }}</div>
-    {% else %}
-    <div style="font-size:.85rem;color:var(--ink50)">Open amount — payer chooses</div>
-    {% endif %}
-    <div style="margin-top:1.25rem;display:flex;justify-content:center;gap:.5rem;flex-wrap:wrap">
-      {% if pr.single_use %}
-      <span class="badge bg-amber">One-time use</span>
-      {% else %}
-      <span class="badge bg-teal">Reusable</span>
-      {% endif %}
-      {% if pr.expires_at %}
-      <span class="badge bg-gray">Expires {{ pr.expires_at|date:"d M Y, H:i" }}</span>
-      {% endif %}
+<div class="app-shell">
+  <div class="app-scroll">
+    <div class="home-header" style="padding-bottom:8px">
+      <div>
+        <div class="home-greeting">Share to receive</div>
+        <div class="home-name">Payment Link</div>
+      </div>
     </div>
-  </div>
 
-  <div class="card card-sm" style="margin-bottom:1rem">
-    <div class="sec-label" style="margin-bottom:.6rem">Shareable Link</div>
-    <div style="display:flex;gap:.6rem;align-items:center">
-      <input type="text" class="fi mono" id="payLink" value="{{ pay_url }}" readonly
-             style="font-size:.78rem;cursor:text;flex:1"/>
-      <button onclick="copyLink()" class="btn btn-white btn-sm" id="copyBtn">Copy</button>
+    {% if messages %}
+    <div style="padding:0 16px 8px">
+      <div class="msgs">{% for m in messages %}<div class="msg msg-{{ m.tags }}">{{ m }}</div>{% endfor %}</div>
     </div>
-    <div class="fh">Share this link via WhatsApp, SMS, or email — works in any browser.</div>
-  </div>
-
-  <div style="display:flex;gap:.75rem;flex-wrap:wrap">
-    <a href="{{ qr_image }}" download="kwallet-qr-{{ pr.token|slice:':8' }}.png"
-       class="btn btn-primary" style="flex:1;justify-content:center">⬇ Download QR</a>
-    {% if pr.status == 'active' %}
-    <form method="post" action="{% url 'qr_payment_disable' pr.token %}" style="flex:1"
-          onsubmit="return confirm('Disable this payment link? Payers will no longer be able to use it.')">
-      {% csrf_token %}
-      <button type="submit" class="btn btn-danger btn-block">Disable Link</button>
-    </form>
     {% endif %}
-  </div>
 
-  <div style="text-align:center;margin-top:1.25rem">
-    <a href="{% url 'qr_payment_list' %}" style="color:var(--ink50);font-size:.82rem">← All Payment Links</a>
+    {% if pr.status != 'active' %}
+    <div style="padding:0 16px 8px">
+      <div class="msg msg-warning">⚠️ This link is <strong>{{ pr.status }}</strong> and no longer accepting payments.</div>
+    </div>
+    {% endif %}
+
+    <div style="padding:0 16px">
+      {# QR Card #}
+      <div class="card" style="text-align:center;padding:2rem;margin-bottom:12px">
+        <img src="{{ qr_image }}" alt="QR Code"
+             style="width:200px;height:200px;border-radius:16px;border:6px solid var(--bg);display:block;margin:0 auto 16px"/>
+        {% if pr.note %}
+        <div style="font-size:1.1rem;font-weight:700;margin-bottom:4px">{{ pr.note }}</div>
+        {% endif %}
+        {% if pr.amount %}
+        <div style="font-size:1.6rem;font-weight:700;color:var(--teal);font-family:'JetBrains Mono',monospace">KES {{ pr.amount|floatformat:0 }}</div>
+        {% else %}
+        <div style="font-size:.85rem;color:var(--ink-3)">Open amount — payer chooses</div>
+        {% endif %}
+        <div style="display:flex;justify-content:center;gap:6px;flex-wrap:wrap;margin-top:12px">
+          {% if pr.single_use %}<span class="badge bg-amber">One-time</span>{% else %}<span class="badge bg-teal">Reusable</span>{% endif %}
+          {% if pr.expires_at %}<span class="badge bg-gray">Expires {{ pr.expires_at|date:"d M Y" }}</span>{% endif %}
+          <span class="badge {% if pr.status == 'active' %}bg-teal{% elif pr.status == 'paid' %}bg-blue{% else %}bg-red{% endif %}">{{ pr.status|title }}</span>
+        </div>
+      </div>
+
+      {# Share link #}
+      <div class="card card-sm" style="margin-bottom:12px">
+        <div class="sec-label" style="margin-bottom:6px">Shareable Link</div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input type="text" class="fi mono" id="payLink" value="{{ pay_url }}" readonly style="font-size:.76rem;flex:1">
+          <button onclick="copyLink()" class="btn btn-light btn-sm" id="copyBtn" style="border-radius:var(--r-full);flex-shrink:0">Copy</button>
+        </div>
+      </div>
+
+      {# Actions #}
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <a href="{{ qr_image }}" download="kwallet-qr-{{ pr.token|slice:':8' }}.png"
+           class="btn btn-primary" style="flex:1;justify-content:center;border-radius:var(--r-md)">⬇ Download QR</a>
+        {% if pr.status == 'active' %}
+        <form method="post" action="{% url 'qr_payment_disable' pr.token %}" style="flex:1"
+              onsubmit="return confirm('Disable this link?')">
+          {% csrf_token %}
+          <button type="submit" class="btn btn-danger btn-block" style="border-radius:var(--r-md)">Disable</button>
+        </form>
+        {% endif %}
+      </div>
+
+      <div style="text-align:center;margin-top:14px">
+        <a href="{% url 'qr_payment_list' %}" style="color:var(--ink-3);font-size:.82rem">← All Links</a>
+      </div>
+    </div>
   </div>
 </div>
 
 <script>
 function copyLink(){
-  const input=document.getElementById('payLink');
-  input.select();
-  navigator.clipboard.writeText(input.value).then(()=>{
-    const btn=document.getElementById('copyBtn');
-    btn.textContent='✓ Copied!';
-    btn.style.color='var(--teal)';
-    setTimeout(()=>{btn.textContent='Copy';btn.style.color='';},2000);
+  navigator.clipboard.writeText(document.getElementById('payLink').value).then(()=>{
+    const b=document.getElementById('copyBtn');
+    b.textContent='✓ Copied'; b.style.background='var(--teal)'; b.style.color='#fff';
+    setTimeout(()=>{b.textContent='Copy';b.style.background='';b.style.color='';},2000);
   });
 }
 </script>

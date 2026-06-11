@@ -1,55 +1,66 @@
 {% extends "wallet/base.html" %}
-{% block title %}P2P Transfer — KWallet{% endblock %}
+{% block title %}Transfer — KWallet{% endblock %}
 {% block content %}
-<div class="page-sm">
-  {% if messages %}<div class="msgs">{% for m in messages %}<div class="msg msg-{{ m.tags }}">{{ m }}</div>{% endfor %}</div>{% endif %}
-
-  <div class="ph"><h1>P2P Transfer</h1><p>Send any currency instantly to another KWallet user.</p></div>
-
-  <div class="fee-box">💡 <strong>Transfer fee: 0.5%</strong> of the amount sent — deducted in addition to the transfer amount.</div>
-
-  <div class="card">
-    <div class="ibox">📱 <strong>Addressed by phone number</strong> — the recipient must have a registered KWallet account. Transfers settle instantly.</div>
-    <form method="post">
-      {% csrf_token %}
-      <div class="fg">
-        <label class="fl">Recipient Phone Number</label>
-        <input class="fi" type="tel" name="recipient_phone" placeholder="0712 345 678" required>
-        {% for e in form.recipient_phone.errors %}<div class="fe">{{ e }}</div>{% endfor %}
+<div class="app-shell">
+  <div class="app-scroll">
+    <div class="home-header" style="padding-bottom:8px">
+      <div>
+        <div class="home-greeting">Send to anyone</div>
+        <div class="home-name">P2P Transfer</div>
       </div>
-      <div class="fg2">
-        <div class="fg">
-          <label class="fl">Currency</label>
-          <select class="fs" name="currency" id="txCurr" onchange="updateFeePreview()">
-            {% for val, label in form.currency.field.choices %}<option value="{{ val }}">{{ label }}</option>{% endfor %}
-          </select>
-        </div>
-        <div class="fg">
-          <label class="fl">Amount</label>
-          <input class="fi" type="number" name="amount" id="txAmt" step="0.0001" min="0.01" placeholder="0.0000" required oninput="updateFeePreview()">
-          {% for e in form.amount.errors %}<div class="fe">{{ e }}</div>{% endfor %}
-        </div>
+    </div>
+
+    {% if messages %}
+    <div style="padding:0 16px 8px">
+      <div class="msgs">{% for m in messages %}<div class="msg msg-{{ m.tags }}">{{ m }}</div>{% endfor %}</div>
+    </div>
+    {% endif %}
+
+    <div style="padding:0 16px">
+      <div class="fee-box">💡 <strong>0.5% fee</strong> — deducted on top of the sent amount. Min KES 5 equivalent.</div>
+      <div class="card">
+        <div class="ibox" style="margin-bottom:1rem">📱 Transfers go to any KWallet user by phone number and settle instantly.</div>
+        <form method="post">
+          {% csrf_token %}
+          <div class="fg">
+            <label class="fl">Recipient Phone</label>
+            <input class="fi" type="tel" name="recipient_phone" placeholder="0712 345 678" required>
+            {% for e in form.recipient_phone.errors %}<div class="fe">{{ e }}</div>{% endfor %}
+          </div>
+          <div class="fg2">
+            <div class="fg">
+              <label class="fl">Currency</label>
+              <select class="fs" name="currency" id="txCurr" onchange="updateFee()">
+                {% for val, label in form.currency.field.choices %}<option value="{{ val }}">{{ label }}</option>{% endfor %}
+              </select>
+            </div>
+            <div class="fg">
+              <label class="fl">Amount</label>
+              <input class="fi" type="number" name="amount" id="txAmt" step="0.0001" min="0.01" placeholder="0.00" required oninput="updateFee()">
+              {% for e in form.amount.errors %}<div class="fe">{{ e }}</div>{% endfor %}
+            </div>
+          </div>
+          <div id="feeBox" style="display:none" class="prev">
+            <div class="prev-main" id="feeMain"></div>
+            <div class="prev-fee"  id="feeLine"></div>
+          </div>
+          <button type="submit" class="btn btn-primary btn-block" style="border-radius:var(--r-md);padding:.8rem">Send →</button>
+        </form>
       </div>
-      <div id="feePreview" style="display:none" class="prev">
-        <div class="prev-main" id="feeMain"></div>
-        <div class="prev-fee" id="feeLine"></div>
-      </div>
-      <button type="submit" class="btn btn-primary btn-block">Send →</button>
-    </form>
+    </div>
   </div>
-  <div style="margin-top:1rem;text-align:center"><a href="{% url 'dashboard' %}" class="btn btn-white btn-sm">← Dashboard</a></div>
 </div>
 <script>
-function updateFeePreview(){
+function updateFee(){
   const amt=parseFloat(document.getElementById('txAmt').value);
   const curr=document.getElementById('txCurr').value;
-  const el=document.getElementById('feePreview');
+  const el=document.getElementById('feeBox');
   if(!amt||amt<=0){el.style.display='none';return;}
   const fee=Math.max(amt*.005,5);
-  const total=amt+fee;
+  const total=(amt+fee).toFixed(4);
   el.style.display='block';
-  document.getElementById('feeMain').textContent='Send: '+amt.toFixed(4)+' '+curr;
-  document.getElementById('feeLine').textContent='Fee: '+fee.toFixed(4)+' '+curr+' (0.5%)  |  Total deducted: '+total.toFixed(4)+' '+curr;
+  document.getElementById('feeMain').textContent=`Send: ${amt.toFixed(4)} ${curr}`;
+  document.getElementById('feeLine').textContent=`Fee: ${fee.toFixed(4)} ${curr} (0.5%)  ·  Total deducted: ${total} ${curr}`;
 }
 </script>
 {% endblock %}

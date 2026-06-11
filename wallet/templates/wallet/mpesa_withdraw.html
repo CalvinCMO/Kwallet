@@ -1,51 +1,62 @@
 {% extends "wallet/base.html" %}
-{% block title %}M-Pesa Withdrawal — KWallet{% endblock %}
+{% block title %}Withdraw — KWallet{% endblock %}
 {% block content %}
-<div class="page-sm">
-  {% if messages %}<div class="msgs">{% for m in messages %}<div class="msg msg-{{ m.tags }}">{{ m }}</div>{% endfor %}</div>{% endif %}
-
-  <div class="ph"><h1>M-Pesa Withdrawal</h1><p>Send KES from your wallet directly to M-Pesa.</p></div>
-
-  <div class="card">
-    <div style="display:flex;align-items:center;gap:.75rem;background:var(--teal-50);border:1px solid var(--teal-100);border-radius:var(--r12);padding:.85rem 1.1rem;margin-bottom:1.25rem">
-      <div style="width:36px;height:36px;background:linear-gradient(135deg,var(--teal),var(--teal-dk));border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:1.1rem;flex-shrink:0">💸</div>
+<div class="app-shell">
+  <div class="app-scroll">
+    <div class="home-header" style="padding-bottom:8px">
       <div>
-        <div style="font-weight:700;font-size:.84rem;color:var(--teal-xdk)">Business to Customer (B2C)</div>
-        <div style="font-size:.74rem;color:var(--ink50);margin-top:.15rem">Balance debited immediately. If delivery fails, your balance is <strong>automatically refunded</strong> including the fee.</div>
+        <div class="home-greeting">Cash out</div>
+        <div class="home-name">M-Pesa Withdrawal</div>
       </div>
     </div>
-    <div class="fee-box" style="margin-bottom:1.25rem">💡 <strong>Withdrawal fee: 1% of amount</strong> — deducted from your KES balance in addition to the withdrawal amount.</div>
-    <form method="post">
-      {% csrf_token %}
-      <div class="fg">
-        <label class="fl">Amount (KES)</label>
-        <input class="fi" type="number" name="amount" step="1" min="10" placeholder="e.g. 1000" required id="wdAmt" oninput="updateWdPreview()">
-        {% for e in form.amount.errors %}<div class="fe">{{ e }}</div>{% endfor %}
-        <div class="fh">Minimum: KES 10</div>
+
+    {% if messages %}
+    <div style="padding:0 16px 8px">
+      <div class="msgs">{% for m in messages %}<div class="msg msg-{{ m.tags }}">{{ m }}</div>{% endfor %}</div>
+    </div>
+    {% endif %}
+
+    <div style="padding:0 16px">
+      <div style="display:flex;align-items:center;gap:12px;background:var(--teal-50);border:1px solid var(--teal-100);border-radius:var(--r-lg);padding:16px;margin-bottom:12px">
+        <div style="width:44px;height:44px;background:linear-gradient(135deg,var(--teal),var(--teal-dk));border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:1.3rem;flex-shrink:0">💸</div>
+        <div>
+          <div style="font-weight:700;font-size:.9rem;color:var(--teal-dk)">B2C — Business to Customer</div>
+          <div style="font-size:.78rem;color:var(--ink-3);margin-top:2px">Balance debited immediately. Auto-refunded (inc. fee) if delivery fails.</div>
+        </div>
       </div>
-      <div id="wdPreview" style="display:none" class="prev" style="background:var(--amber-lt)">
-        <div class="prev-main" id="wdMain"></div>
-        <div class="prev-fee" id="wdFee"></div>
+      <div class="fee-box" style="margin-bottom:16px">💡 <strong>Withdrawal fee: 1%</strong> — deducted from your KES balance in addition to the amount. Min KES 10.</div>
+      <div class="card">
+        <form method="post">
+          {% csrf_token %}
+          <div class="fg">
+            <label class="fl">Amount (KES)</label>
+            <input class="fi" type="number" name="amount" step="1" min="10" placeholder="e.g. 1000" required id="wdAmt" oninput="updatePreview()">
+            {% for e in form.amount.errors %}<div class="fe">{{ e }}</div>{% endfor %}
+            <div class="fh">Minimum KES 10</div>
+          </div>
+          <div id="wdPreview" style="display:none" class="prev">
+            <div class="prev-main" id="wdMain"></div>
+            <div class="prev-fee"  id="wdFee"></div>
+          </div>
+          <div class="fg" style="margin-bottom:1.5rem">
+            <label class="fl">M-Pesa Phone <span style="text-transform:none;letter-spacing:0;font-weight:400;color:var(--ink-4)">(default: {{ wallet.phone }})</span></label>
+            <input class="fi" type="tel" name="phone" placeholder="{{ wallet.phone }}">
+          </div>
+          <button type="submit" class="btn btn-primary btn-block" style="border-radius:var(--r-md);padding:.8rem">Withdraw to M-Pesa</button>
+        </form>
       </div>
-      <div class="fg">
-        <label class="fl">M-Pesa Phone <span style="text-transform:none;letter-spacing:0;font-weight:400;color:var(--ink30);font-size:.7rem">(leave blank to use {{ wallet.phone }})</span></label>
-        <input class="fi" type="tel" name="phone" placeholder="{{ wallet.phone }}">
-      </div>
-      <button type="submit" class="btn btn-primary btn-block">💸 &nbsp;Withdraw to M-Pesa</button>
-    </form>
+    </div>
   </div>
-  <div style="margin-top:1rem;text-align:center"><a href="{% url 'dashboard' %}" class="btn btn-white btn-sm">← Dashboard</a></div>
 </div>
 <script>
-function updateWdPreview(){
+function updatePreview(){
   const amt=parseFloat(document.getElementById('wdAmt').value);
   const el=document.getElementById('wdPreview');
   if(!amt||amt<10){el.style.display='none';return;}
   const fee=Math.max(amt*.01,10);
-  const total=amt+fee;
   el.style.display='block';
-  document.getElementById('wdMain').textContent='You receive: KES '+amt.toFixed(0);
-  document.getElementById('wdFee').textContent='Fee: KES '+fee.toFixed(2)+' (1%)  |  Total deducted: KES '+total.toFixed(2);
+  document.getElementById('wdMain').textContent=`You receive: KES ${amt.toFixed(0)}`;
+  document.getElementById('wdFee').textContent=`Fee: KES ${fee.toFixed(2)} (1%)  ·  Total deducted: KES ${(amt+fee).toFixed(2)}`;
 }
 </script>
 {% endblock %}

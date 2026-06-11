@@ -1,40 +1,61 @@
 {% extends "wallet/base.html" %}
-{% block title %}Add Currency — KWallet{% endblock %}
+{% block title %}Edit Currency — KWallet{% endblock %}
+{% block nav_currency %}active{% endblock %}
 {% block content %}
-<div class="page-sm">
-  {% if messages %}<div class="msgs">{% for m in messages %}<div class="msg msg-{{ m.tags }}">{{ m }}</div>{% endfor %}</div>{% endif %}
+<div class="app-shell">
+  <div class="app-scroll">
 
-  <div class="ph"><h1>Add Currency</h1><p>Expand your wallet with more international currencies.</p></div>
+    <div class="home-header" style="padding-bottom:8px">
+      <div>
+        <div class="home-greeting">Manage wallets</div>
+        <div class="home-name">Edit Currency</div>
+      </div>
+    </div>
 
-  <div class="card" style="margin-bottom:1rem">
-    <div class="card-title">Your Active Currencies</div>
-    <div style="display:flex;flex-wrap:wrap;gap:.5rem;margin-bottom:1.25rem">
+    {% if messages %}
+    <div style="padding:0 16px 8px">
+      <div class="msgs">{% for m in messages %}<div class="msg msg-{{ m.tags }}">{{ m }}</div>{% endfor %}</div>
+    </div>
+    {% endif %}
+
+    {# Active currencies grid #}
+    <div class="section-hd">
+      <span class="section-title">Active Wallets</span>
+    </div>
+    <div style="padding:0 16px 16px; display:flex; flex-wrap:wrap; gap:8px">
       {% for curr in existing %}
-      <span class="country-badge country-badge-teal" style="font-size:.75rem;padding:.3rem .75rem">
-        {% if curr == 'KES' %}🇰🇪{% elif curr == 'TZS' %}🇹🇿{% elif curr == 'UGX' %}🇺🇬{% elif curr == 'RWF' %}🇷🇼{% elif curr == 'ETB' %}🇪🇹{% elif curr == 'USD' %}🇺🇸{% elif curr == 'EUR' %}🇪🇺{% elif curr == 'GBP' %}🇬🇧{% elif curr == 'JPY' %}🇯🇵{% elif curr == 'CNY' %}🇨🇳{% elif curr == 'AED' %}🇦🇪{% elif curr == 'INR' %}🇮🇳{% elif curr == 'CAD' %}🇨🇦{% elif curr == 'AUD' %}🇦🇺{% elif curr == 'CHF' %}🇨🇭{% elif curr == 'ZAR' %}🇿🇦{% elif curr == 'NGN' %}🇳🇬{% elif curr == 'GHS' %}🇬🇭{% else %}💱{% endif %}
-        {{ curr }}
-      </span>
+      <div style="display:flex;align-items:center;gap:6px;background:var(--teal-50);border:1px solid var(--teal-100);border-radius:999px;padding:6px 14px">
+        <span style="font-size:16px">
+          {% if curr == 'KES' %}🇰🇪{% elif curr == 'TZS' %}🇹🇿{% elif curr == 'UGX' %}🇺🇬{% elif curr == 'RWF' %}🇷🇼{% elif curr == 'ETB' %}🇪🇹{% elif curr == 'USD' %}🇺🇸{% elif curr == 'EUR' %}🇪🇺{% elif curr == 'GBP' %}🇬🇧{% elif curr == 'JPY' %}🇯🇵{% elif curr == 'CNY' %}🇨🇳{% elif curr == 'AED' %}🇦🇪{% elif curr == 'INR' %}🇮🇳{% elif curr == 'CAD' %}🇨🇦{% elif curr == 'AUD' %}🇦🇺{% elif curr == 'CHF' %}🇨🇭{% elif curr == 'ZAR' %}🇿🇦{% elif curr == 'NGN' %}🇳🇬{% elif curr == 'GHS' %}🇬🇭{% else %}💱{% endif %}
+        </span>
+        <span style="font-size:13px;font-weight:600;color:var(--teal-dk)">{{ curr }}</span>
+      </div>
       {% endfor %}
     </div>
-    <hr class="div" style="margin:.5rem 0 1.25rem">
-    <div class="card-title">Add New Currency</div>
-    <div class="ibox">Select any international currency to add a zero balance to your wallet. Deposit into it by exchanging from another balance.</div>
-    <form method="post">
-      {% csrf_token %}
-      <div class="fg">
-        <label class="fl">Currency</label>
-        <select class="fs" name="currency">
-          {% for val, label in form.currency.field.choices %}
-          <option value="{{ val }}" {% if val in existing %}disabled style="color:var(--ink30)"{% endif %}>
-            {{ label }} {% if val in existing %}(already added){% endif %}
-          </option>
-          {% endfor %}
-        </select>
-        {% for e in form.currency.errors %}<div class="fe">{{ e }}</div>{% endfor %}
+
+    {# Add new #}
+    <div style="padding:0 16px">
+      <div class="card">
+        <div class="card-title">Add a Currency</div>
+        <div class="ibox">Add a zero-balance wallet. Fund it by exchanging from an existing balance.</div>
+        <form method="post">
+          {% csrf_token %}
+          <div class="fg">
+            <label class="fl">Select Currency</label>
+            <select class="fs" name="currency">
+              {% for val, label in form.currency.field.choices %}
+              <option value="{{ val }}" {% if val in existing %}disabled style="color:var(--ink-4)"{% endif %}>
+                {{ label }}{% if val in existing %} ✓{% endif %}
+              </option>
+              {% endfor %}
+            </select>
+            {% for e in form.currency.errors %}<div class="fe">{{ e }}</div>{% endfor %}
+          </div>
+          <button type="submit" class="btn btn-primary btn-block" style="border-radius:var(--r-md)">Add Currency</button>
+        </form>
       </div>
-      <button type="submit" class="btn btn-primary btn-block">Add Currency →</button>
-    </form>
+    </div>
+
   </div>
-  <div style="text-align:center"><a href="{% url 'dashboard' %}" class="btn btn-white btn-sm">← Dashboard</a></div>
 </div>
 {% endblock %}

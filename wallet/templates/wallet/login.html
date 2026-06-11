@@ -20,15 +20,17 @@
         <input class="fi" type="tel" name="phone" placeholder="0712 345 678" required autocomplete="tel">
         {% for e in form.phone.errors %}<div class="fe">{{ e }}</div>{% endfor %}
       </div>
-      <div class="fg">
+      <div class="fg" style="margin-bottom:1.5rem">
         <label class="fl">PIN</label>
         <input class="fi" type="password" name="pin" placeholder="••••••" maxlength="6" required autocomplete="current-password">
         {% for e in form.pin.errors %}<div class="fe">{{ e }}</div>{% endfor %}
       </div>
-      {% if form.non_field_errors %}<div class="msg msg-error" style="margin-bottom:1rem">{{ form.non_field_errors }}</div>{% endif %}
-      <button type="submit" class="btn btn-primary btn-block" style="margin-top:.5rem">Sign In →</button>
+      {% if form.non_field_errors %}
+      <div class="msg msg-error" style="margin-bottom:1rem">{{ form.non_field_errors }}</div>
+      {% endif %}
+      <button type="submit" class="btn btn-primary btn-block" style="border-radius:var(--r-md);padding:.8rem">Sign In</button>
     </form>
   </div>
-  <div class="auth-foot">No wallet yet? <a href="{% url 'register' %}">Create one free</a></div>
+  <div class="auth-foot">No account yet? <a href="{% url 'register' %}">Create wallet free</a></div>
 </div>
 {% endblock %}

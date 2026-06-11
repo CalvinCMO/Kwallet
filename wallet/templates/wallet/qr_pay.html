@@ -1,79 +1,53 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Pay {% if pr.note %}{{ pr.note }}{% else %}via KWallet{% endif %}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <style>
-    :root{
-      --teal:#1D9E75;--teal-dk:#0F6E56;--teal-xdk:#085041;
-      --teal-50:#E1F5EE;--teal-100:#9FE1CB;
-      --red:#E24B4A;--red-lt:#FEE2E2;
-      --bg:#F0F4F3;--white:#FFFFFF;
-      --ink:#111827;--ink50:#6B7280;--ink30:#9CA3AF;--ink10:#F3F4F6;--ink-border:#E5E7EB;
-      --r8:8px;--r12:12px;--r16:16px;
-    }
+    :root{--teal:#1DA57A;--teal-dk:#0F6E56;--teal-50:#E6F7F1;--teal-100:#B3E8D5;--red:#E24B4A;--red-lt:#FDEAEA;--bg:#F0F4F3;--surface:#fff;--ink:#0D1B12;--ink-3:#6B7D73;--ink-4:#9EADA6;--border:#E2EAE6;--r-sm:8px;--r-md:14px;--r-lg:20px;--r-full:999px}
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-    body{background:var(--bg);color:var(--ink);font-family:'Inter',sans-serif;min-height:100vh;
-         display:flex;flex-direction:column;align-items:center;justify-content:center;padding:1.5rem}
-    .wrap{width:100%;max-width:420px}
-    .logo{display:flex;align-items:center;gap:.5rem;justify-content:center;margin-bottom:2rem;text-decoration:none}
-    .logo-icon{width:36px;height:36px;background:linear-gradient(135deg,var(--teal),var(--teal-dk));border-radius:10px;
-               display:flex;align-items:center;justify-content:center;font-size:1rem;box-shadow:0 2px 8px rgba(29,158,117,.28)}
-    .logo-name{font-size:1.2rem;font-weight:800;color:var(--ink);letter-spacing:-.04em}
-    .logo-name span{color:var(--teal)}
-    .card{background:var(--white);border:1px solid var(--ink-border);border-radius:var(--r16);padding:2rem;
-          box-shadow:0 4px 24px rgba(0,0,0,.08)}
-    .recipient{text-align:center;margin-bottom:1.75rem;padding-bottom:1.5rem;border-bottom:1px solid var(--ink-border)}
-    .avatar{width:60px;height:60px;background:linear-gradient(135deg,var(--teal-50),var(--teal-100));
-            border-radius:50%;display:flex;align-items:center;justify-content:center;
-            font-size:1.5rem;margin:0 auto .75rem;font-weight:800;color:var(--teal-dk)}
-    .rec-label{font-size:.68rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink30);margin-bottom:.2rem}
-    .rec-name{font-size:1.2rem;font-weight:800;letter-spacing:-.03em}
-    .rec-amount{font-family:'JetBrains Mono',monospace;font-size:1.8rem;font-weight:500;color:var(--teal);margin-top:.4rem}
-    .rec-note{font-size:.85rem;color:var(--ink50);margin-top:.3rem}
+    body{background:var(--bg);color:var(--ink);font-family:"Inter",sans-serif;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:1.5rem;-webkit-font-smoothing:antialiased}
+    .wrap{width:100%;max-width:400px}
+    .logo{display:flex;align-items:center;gap:.5rem;justify-content:center;margin-bottom:1.75rem;text-decoration:none}
+    .logo-box{width:34px;height:34px;background:linear-gradient(135deg,var(--teal),var(--teal-dk));border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:.9rem;color:#fff;font-weight:800}
+    .logo-name{font-size:1.1rem;font-weight:800;color:var(--ink);letter-spacing:-.03em}.logo-name span{color:var(--teal)}
+    .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:2rem;box-shadow:0 4px 20px rgba(0,0,0,.08)}
+    .recipient{text-align:center;padding-bottom:1.5rem;margin-bottom:1.5rem;border-bottom:1px solid var(--border)}
+    .avatar{width:56px;height:56px;background:linear-gradient(135deg,var(--teal-50),var(--teal-100));border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.4rem;font-weight:800;color:var(--teal-dk);margin:0 auto .75rem}
+    .rec-lbl{font-size:.64rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-4);margin-bottom:.2rem}
+    .rec-name{font-size:1.1rem;font-weight:800;letter-spacing:-.03em}
+    .rec-amt{font-family:"JetBrains Mono",monospace;font-size:1.7rem;font-weight:600;color:var(--teal);margin-top:.35rem}
+    .rec-note{font-size:.84rem;color:var(--ink-3);margin-top:.3rem}
     .fg{margin-bottom:1rem}
-    .fl{display:block;font-size:.7rem;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--ink50);margin-bottom:.35rem}
-    .fi{width:100%;background:var(--ink10);border:1.5px solid var(--ink-border);border-radius:var(--r8);
-        color:var(--ink);font-family:'JetBrains Mono',monospace;font-size:.95rem;padding:.72rem 1rem;outline:none;
-        transition:border-color .15s,box-shadow .15s}
-    .fi:focus{border-color:var(--teal);box-shadow:0 0 0 3px rgba(29,158,117,.12);background:var(--white)}
-    .fi[readonly]{cursor:not-allowed;opacity:.7}
-    .fh{font-size:.7rem;color:var(--ink30);margin-top:.25rem}
-    .fe{font-size:.72rem;color:var(--red);margin-top:.25rem;font-weight:500}
-    .errorlist{list-style:none}.errorlist li{font-size:.72rem;color:var(--red);margin-top:.25rem}
-    .btn{display:flex;align-items:center;justify-content:center;gap:.4rem;padding:.72rem 1.6rem;
-         border:none;border-radius:var(--r8);font-family:'Inter',sans-serif;font-size:.9rem;
-         font-weight:600;cursor:pointer;text-decoration:none;transition:all .18s;width:100%;margin-top:1.25rem}
-    .btn-primary{background:linear-gradient(135deg,var(--teal),var(--teal-dk));color:#fff;box-shadow:0 2px 10px rgba(29,158,117,.28)}
-    .btn-primary:hover{transform:translateY(-1px);box-shadow:0 4px 16px rgba(29,158,117,.35)}
-    .msg-error{background:var(--red-lt);border:1px solid #fecaca;border-radius:var(--r8);
-               padding:.8rem 1rem;font-size:.83rem;color:#991b1b;margin-bottom:1rem;display:flex;gap:.5rem}
-    .secure{text-align:center;margin-top:1.25rem;font-size:.75rem;color:var(--ink30);display:flex;align-items:center;
-            justify-content:center;gap:.35rem}
+    .fl{display:block;font-size:.66rem;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-3);margin-bottom:.35rem}
+    .fi{width:100%;background:var(--bg);border:1.5px solid var(--border);border-radius:var(--r-sm);color:var(--ink);font-family:"JetBrains Mono",monospace;font-size:.95rem;padding:.68rem 1rem;outline:none;transition:border-color .15s,box-shadow .15s}
+    .fi:focus{border-color:var(--teal);box-shadow:0 0 0 3px rgba(29,165,122,.12);background:var(--surface)}
+    .fh{font-size:.68rem;color:var(--ink-4);margin-top:.25rem}
+    .fe{font-size:.7rem;color:var(--red);margin-top:.25rem;font-weight:500}
+    .errorlist{list-style:none}.errorlist li{font-size:.7rem;color:var(--red);margin-top:.25rem}
+    .btn{display:flex;align-items:center;justify-content:center;gap:.4rem;width:100%;padding:.78rem 1.5rem;border:none;border-radius:var(--r-md);font-family:"Inter",sans-serif;font-size:.9rem;font-weight:600;cursor:pointer;text-decoration:none;transition:all .18s;margin-top:1.25rem}
+    .btn-primary{background:linear-gradient(135deg,var(--teal),var(--teal-dk));color:#fff;box-shadow:0 2px 10px rgba(29,165,122,.28)}
+    .btn-primary:hover{transform:translateY(-1px)}
+    .msg-error{background:var(--red-lt);border:1px solid #fecaca;border-radius:var(--r-sm);padding:.8rem 1rem;font-size:.83rem;color:#991b1b;margin-bottom:1rem}
+    .secure{text-align:center;margin-top:1rem;font-size:.71rem;color:var(--ink-4)}
   </style>
 </head>
 <body>
 <div class="wrap">
-  <a href="/" class="logo">
-    <div class="logo-icon">💳</div>
-    <span class="logo-name">K<span>Wallet</span></span>
-  </a>
+  <a href="/" class="logo"><div class="logo-box">K</div><span class="logo-name">K<span>Wallet</span></span></a>
   <div class="card">
     <div class="recipient">
       <div class="avatar">{{ recipient_name|slice:":1" }}</div>
-      <div class="rec-label">Paying</div>
+      <div class="rec-lbl">Paying</div>
       <div class="rec-name">{{ recipient_name }}</div>
-      {% if pr.amount %}<div class="rec-amount">KES {{ pr.amount|floatformat:0 }}</div>{% endif %}
+      {% if pr.amount %}<div class="rec-amt">KES {{ pr.amount|floatformat:0 }}</div>{% endif %}
       {% if pr.note %}<div class="rec-note">{{ pr.note }}</div>{% endif %}
     </div>
     <form method="post">
       {% csrf_token %}
-      {% if form.non_field_errors %}
-      <div class="msg-error">❌ {{ form.non_field_errors|join:", " }}</div>
-      {% endif %}
+      {% if form.non_field_errors %}<div class="msg-error">{{ form.non_field_errors|join:", " }}</div>{% endif %}
       <div class="fg">
         <label class="fl" for="{{ form.amount.id_for_label }}">{{ form.amount.label }}</label>
         {{ form.amount }}
@@ -83,13 +57,13 @@
       <div class="fg">
         <label class="fl" for="{{ form.phone.id_for_label }}">{{ form.phone.label }}</label>
         {{ form.phone }}
-        <div class="fh">The M-Pesa prompt will be sent to this number. You will be asked to enter your PIN.</div>
+        <div class="fh">An M-Pesa PIN prompt will be sent to this number.</div>
         {% if form.phone.errors %}<div class="fe">{{ form.phone.errors|join:", " }}</div>{% endif %}
       </div>
-      <button type="submit" class="btn btn-primary">📲 Send M-Pesa Request</button>
+      <button type="submit" class="btn btn-primary">📲 &nbsp;Send M-Pesa Request</button>
     </form>
   </div>
-  <div class="secure">🔒 Powered by M-Pesa &amp; KWallet — your PIN is never shared with us</div>
+  <div class="secure">🔒 Powered by M-Pesa &amp; KWallet — your PIN is never shared</div>
 </div>
 </body>
 </html>

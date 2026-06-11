@@ -1,62 +1,41 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Waiting for Payment — KWallet</title>
+  <meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Waiting — KWallet</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
-    :root{
-      --teal:#1D9E75;--teal-dk:#0F6E56;--teal-50:#E1F5EE;--teal-100:#9FE1CB;
-      --red:#E24B4A;--red-lt:#FEE2E2;
-      --bg:#F0F4F3;--white:#FFFFFF;
-      --ink:#111827;--ink50:#6B7280;--ink30:#9CA3AF;--ink10:#F3F4F6;--ink-border:#E5E7EB;
-      --r8:8px;--r12:12px;--r16:16px;
-    }
+    :root{--teal:#1DA57A;--teal-dk:#0F6E56;--teal-50:#E6F7F1;--teal-100:#B3E8D5;--red:#E24B4A;--red-lt:#FDEAEA;--bg:#F0F4F3;--surface:#fff;--ink:#0D1B12;--ink-3:#6B7D73;--ink-4:#9EADA6;--border:#E2EAE6;--r-sm:8px;--r-md:14px;--r-lg:20px;--r-full:999px}
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-    body{background:var(--bg);color:var(--ink);font-family:'Inter',sans-serif;min-height:100vh;
-         display:flex;align-items:center;justify-content:center;padding:1.5rem}
-    .wrap{width:100%;max-width:420px;text-align:center}
-    .logo{display:flex;align-items:center;gap:.5rem;justify-content:center;margin-bottom:2rem;text-decoration:none}
-    .logo-icon{width:36px;height:36px;background:linear-gradient(135deg,var(--teal),var(--teal-dk));border-radius:10px;
-               display:flex;align-items:center;justify-content:center;font-size:1rem}
-    .logo-name{font-size:1.2rem;font-weight:800;color:var(--ink);letter-spacing:-.04em}
-    .logo-name span{color:var(--teal)}
-    .card{background:var(--white);border:1px solid var(--ink-border);border-radius:var(--r16);padding:2.5rem 2rem;
-          box-shadow:0 4px 24px rgba(0,0,0,.08)}
-    .pulse-wrap{width:72px;height:72px;background:var(--teal-50);border-radius:50%;
-                display:flex;align-items:center;justify-content:center;margin:0 auto 1.5rem;position:relative}
-    .pulse-wrap::before{content:'';position:absolute;inset:-8px;border-radius:50%;
-                        border:2px solid var(--teal);animation:ring 1.5s ease-out infinite}
-    .pulse-dot{font-size:2rem}
+    body{background:var(--bg);color:var(--ink);font-family:"Inter",sans-serif;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:1.5rem;-webkit-font-smoothing:antialiased}
+    .wrap{width:100%;max-width:380px;text-align:center}
+    .logo{display:flex;align-items:center;gap:.5rem;justify-content:center;margin-bottom:1.75rem;text-decoration:none}
+    .logo-box{width:34px;height:34px;background:linear-gradient(135deg,var(--teal),var(--teal-dk));border-radius:9px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800}
+    .logo-name{font-size:1.1rem;font-weight:800;color:var(--ink);letter-spacing:-.03em}.logo-name span{color:var(--teal)}
+    .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:2.25rem 2rem;box-shadow:0 4px 20px rgba(0,0,0,.08)}
+    .pulse-wrap{width:68px;height:68px;background:var(--teal-50);border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 1.25rem;position:relative}
+    .pulse-wrap::before{content:'';position:absolute;inset:-8px;border-radius:50%;border:2px solid var(--teal);animation:ring 1.5s ease-out infinite}
+    .pulse-icon{font-size:1.75rem}
     @keyframes ring{0%{opacity:1;transform:scale(1)}100%{opacity:0;transform:scale(1.7)}}
-    h2{font-size:1.4rem;font-weight:800;letter-spacing:-.03em;margin-bottom:.6rem}
-    p{color:var(--ink50);font-size:.9rem;line-height:1.6}
-    .status-box{background:var(--ink10);border-radius:var(--r8);padding:.85rem 1rem;
-                margin-top:1.5rem;font-family:'JetBrains Mono',monospace;font-size:.82rem;color:var(--ink50)}
+    h2{font-size:1.35rem;font-weight:800;letter-spacing:-.03em;margin-bottom:.55rem}
+    p{color:var(--ink-3);font-size:.88rem;line-height:1.65}
+    .status-box{background:var(--bg);border-radius:var(--r-sm);padding:.8rem 1rem;margin-top:1.4rem;font-size:.82rem;color:var(--ink-3);font-family:"JetBrains Mono",monospace}
     #statusText{color:var(--ink);font-weight:500}
-    .error-box{background:var(--red-lt);border:1px solid #fecaca;border-radius:var(--r8);
-               padding:.85rem 1rem;margin-top:1.5rem;font-size:.85rem;color:#991b1b;display:none}
-    .btn-retry{display:inline-flex;align-items:center;gap:.4rem;padding:.55rem 1.25rem;border:none;
-               border-radius:var(--r8);font-family:'Inter',sans-serif;font-size:.84rem;font-weight:600;
-               cursor:pointer;background:var(--teal);color:#fff;margin-top:1rem;text-decoration:none}
+    .err-box{background:var(--red-lt);border:1px solid #fecaca;border-radius:var(--r-sm);padding:.85rem 1rem;margin-top:1.25rem;font-size:.84rem;color:#991b1b;display:none}
+    .btn-retry{display:inline-block;margin-top:.75rem;padding:.55rem 1.25rem;border:none;border-radius:var(--r-full);font-family:"Inter",sans-serif;font-size:.84rem;font-weight:600;cursor:pointer;background:var(--teal);color:#fff;text-decoration:none}
   </style>
 </head>
 <body>
 <div class="wrap">
-  <a href="/" class="logo">
-    <div class="logo-icon">💳</div>
-    <span class="logo-name">K<span>Wallet</span></span>
-  </a>
+  <a href="/" class="logo"><div class="logo-box">K</div><span class="logo-name">K<span>Wallet</span></span></a>
   <div class="card">
-    <div class="pulse-wrap"><div class="pulse-dot">📲</div></div>
+    <div class="pulse-wrap"><div class="pulse-icon">📲</div></div>
     <h2>Check Your Phone</h2>
-    <p>An M-Pesa payment request has been sent to your phone.<br>
-    <strong>Open M-Pesa and enter your PIN</strong> to complete the payment.</p>
-    <div class="status-box">Status: <span id="statusText">Waiting for confirmation…</span></div>
-    <div class="error-box" id="errorBox">
-      ❌ Payment was cancelled or failed.
+    <p>An M-Pesa payment request has been sent.<br><strong>Open M-Pesa and enter your PIN</strong> to confirm.</p>
+    <div class="status-box">Status: <span id="statusText">Waiting…</span></div>
+    <div class="err-box" id="errorBox">
+      ❌ Payment cancelled or failed.
       <a href="{% url 'qr_pay' token %}" class="btn-retry">Try Again</a>
     </div>
   </div>
@@ -64,15 +43,13 @@
 <script>
 const statusUrl="{% url 'qr_pay_status' token checkout_id %}";
 const successUrl="{% url 'qr_pay_success' token %}";
-let attempts=0;
-const MAX=40;
+let n=0;
 function poll(){
-  if(attempts>=MAX){document.getElementById('statusText').textContent='Timed out — please try again.';document.getElementById('errorBox').style.display='block';return;}
-  attempts++;
-  fetch(statusUrl).then(r=>r.json()).then(data=>{
-    if(data.status==='completed'){document.getElementById('statusText').textContent='✅ Payment confirmed!';window.location.href=successUrl;}
-    else if(data.status==='failed'){document.getElementById('statusText').textContent='Payment failed.';document.getElementById('errorBox').style.display='block';}
-    else{setTimeout(poll,3000);}
+  if(n++>40){document.getElementById('statusText').textContent='Timed out.';document.getElementById('errorBox').style.display='block';return;}
+  fetch(statusUrl).then(r=>r.json()).then(d=>{
+    if(d.status==='completed'){document.getElementById('statusText').textContent='✅ Confirmed!';window.location.href=successUrl;}
+    else if(d.status==='failed'){document.getElementById('statusText').textContent='Failed.';document.getElementById('errorBox').style.display='block';}
+    else setTimeout(poll,3000);
   }).catch(()=>setTimeout(poll,3000));
 }
 setTimeout(poll,3000);

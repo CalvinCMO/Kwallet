@@ -1,127 +1,141 @@
 {% extends "wallet/base.html" %}
-{% block title %}Dashboard — KWallet{% endblock %}
+{% block title %}Home — KWallet{% endblock %}
+{% block nav_home %}active{% endblock %}
 {% block content %}
-<div class="page">
 
-  {% if messages %}
-  <div class="msgs">{% for m in messages %}<div class="msg msg-{{ m.tags }}">{{ m }}</div>{% endfor %}</div>
-  {% endif %}
+{# Mobile-app shell #}
+<div class="app-shell">
+  <div class="app-scroll">
 
-  <!-- Portfolio Banner -->
-  <div class="pb">
-    <div class="pb-l">
-      <div class="pb-greet">Good day,</div>
-      <div class="pb-name">{{ wallet.user.get_full_name }}</div>
-      <div class="pb-phone">{{ wallet.phone }} &nbsp;·&nbsp;
-        <span class="kyc {% if wallet.kyc_status == 'verified' %}kyc-v{% elif wallet.kyc_status == 'rejected' %}kyc-r{% else %}kyc-p{% endif %}">{{ wallet.kyc_status }}</span>
+    {% if messages %}
+    <div style="padding: 12px 16px 0">
+      <div class="msgs">{% for m in messages %}<div class="msg msg-{{ m.tags }}">{{ m }}</div>{% endfor %}</div>
+    </div>
+    {% endif %}
+
+    {# ── Header ── #}
+    <div class="home-header">
+      <div>
+        <div class="home-greeting">Good morning,</div>
+        <div class="home-name">{{ wallet.user.first_name|default:wallet.user.get_full_name }}</div>
+      </div>
+      <button class="currency-toggle" onclick="window.location='{% url 'add_currency' %}'">Currency balance</button>
+    </div>
+
+    {# ── Portfolio Card ── #}
+    <div class="portfolio-card">
+      <div class="pc-label">Portfolio value</div>
+      <div class="pc-value" id="portfolioVal">{{ home_currency }} {{ total_value }}</div>
+      <div class="pc-card-no">**** **** **** {{ wallet.phone|slice:"-4:" }}</div>
+      <div class="pc-rate">
+        <span class="pc-rate-dot"></span>
+        <span id="rateStatus">CB live rates</span>
       </div>
     </div>
-    <div class="pb-r">
-      <div class="pb-lbl">Portfolio Value</div>
-      <div class="pb-val" id="portfolioVal">{{ home_currency }} {{ total_value }}</div>
-      <div class="pb-sub" id="rateStatus">Loading live rates…</div>
-    </div>
-  </div>
 
-  <!-- Balances -->
-  <div class="sec-row">
-    <span class="sec-label">Your Balances</span>
-    <a href="{% url 'add_currency' %}" class="btn btn-white btn-sm">+ Add Currency</a>
-  </div>
-  <div class="bal-grid" style="margin-bottom:2rem">
-    {% for curr, cb in balances.items %}
-    <div class="bal-card {% if curr == wallet.home_currency %}bal-home{% endif %}">
-      <div class="bal-flag">
-        {% if curr == 'KES' %}🇰🇪{% elif curr == 'TZS' %}🇹🇿{% elif curr == 'UGX' %}🇺🇬{% elif curr == 'RWF' %}🇷🇼{% elif curr == 'ETB' %}🇪🇹{% elif curr == 'USD' %}🇺🇸{% elif curr == 'EUR' %}🇪🇺{% elif curr == 'GBP' %}🇬🇧{% elif curr == 'JPY' %}🇯🇵{% elif curr == 'CNY' %}🇨🇳{% elif curr == 'AED' %}🇦🇪{% elif curr == 'INR' %}🇮🇳{% elif curr == 'CAD' %}🇨🇦{% elif curr == 'AUD' %}🇦🇺{% elif curr == 'CHF' %}🇨🇭{% elif curr == 'ZAR' %}🇿🇦{% elif curr == 'NGN' %}🇳🇬{% elif curr == 'GHS' %}🇬🇭{% else %}💱{% endif %}
-      </div>
-      <div class="bal-code">{{ curr }}</div>
-      <div class="bal-val mono">{{ cb.balance|floatformat:2 }}</div>
-      <div class="bal-usd mono" id="usd_{{ curr }}">—</div>
-    </div>
-    {% endfor %}
-  </div>
-
-  <!-- Quick Actions -->
-  <div class="sec-row"><span class="sec-label">Quick Actions</span></div>
-  <div class="act-grid" style="margin-bottom:2.5rem">
-    <a href="{% url 'mpesa_deposit' %}"  class="act-btn act-mpesa">
-      <div class="act-icon">📲</div>M-Pesa Deposit
-    </a>
-    <a href="{% url 'mpesa_withdraw' %}" class="act-btn act-mpesa">
-      <div class="act-icon">💸</div>M-Pesa Withdraw
-    </a>
-    <a href="{% url 'exchange' %}"       class="act-btn act-exc">
-      <div class="act-icon">🔄</div>Exchange
-    </a>
-    <a href="{% url 'p2p' %}"            class="act-btn act-p2p">
-      <div class="act-icon">↗️</div>P2P Transfer
-    </a>
-    <a href="{% url 'qr_payment_create' %}" class="act-btn act-qr">
-      <div class="act-icon">📷</div>Receive via QR
-    </a>
-  </div>
-
-  <!-- Fee Schedule -->
-  <div class="sec-row"><span class="sec-label">Fee Schedule</span></div>
-  <div class="tbl-wrap" style="margin-bottom:2rem">
-    <table class="tbl">
-      <thead><tr><th>Operation</th><th>Fee</th><th>Note</th></tr></thead>
-      <tbody>
-        <tr><td>M-Pesa Deposit</td><td><span class="badge bg-teal">0%</span></td><td style="color:var(--ink50);font-size:.78rem">Free — we absorb it</td></tr>
-        <tr><td>M-Pesa Withdrawal</td><td class="mono">1%</td><td style="color:var(--ink50);font-size:.78rem">Min KES 10</td></tr>
-        <tr><td>Currency Exchange</td><td class="mono">1.5%</td><td style="color:var(--ink50);font-size:.78rem">On amount exchanged</td></tr>
-        <tr><td>P2P Transfer</td><td class="mono">0.5%</td><td style="color:var(--ink50);font-size:.78rem">Min KES 5 equivalent</td></tr>
-        <tr><td>Bank Deposit</td><td class="mono">0.5%</td><td style="color:var(--ink50);font-size:.78rem">On received amount</td></tr>
-        <tr><td>Bank Withdrawal</td><td class="mono">1.5%</td><td style="color:var(--ink50);font-size:.78rem">Min KES 50 equivalent</td></tr>
-      </tbody>
-    </table>
-  </div>
-
-  <!-- Recent Transactions -->
-  <div class="sec-row">
-    <span class="sec-label">Recent Transactions</span>
-    <a href="{% url 'transactions' %}" class="btn btn-white btn-sm">View All</a>
-  </div>
-  {% if recent_txns %}
-  <div class="tx-list">
-    {% for txn in recent_txns %}
-    <div class="tx-item">
-      <div class="tx-avatar">
-        {% if 'mpesa' in txn.transaction_type %}📲
-        {% elif txn.transaction_type == 'exchange' %}🔄
-        {% elif txn.transaction_type == 'p2p_send' %}↗️
-        {% elif txn.transaction_type == 'p2p_receive' %}↙️
-        {% else %}💳{% endif %}
-      </div>
-      <div class="tx-info">
-        <div class="tx-name">
-          {% if txn.transaction_type == 'mpesa_deposit' %}M-Pesa Deposit
-          {% elif txn.transaction_type == 'mpesa_withdraw' %}M-Pesa Withdrawal
-          {% elif txn.transaction_type == 'exchange' %}Currency Exchange
-          {% elif txn.transaction_type == 'p2p_send' %}P2P Transfer Sent
-          {% elif txn.transaction_type == 'p2p_receive' %}P2P Transfer Received
-          {% else %}{{ txn.transaction_type|title }}{% endif %}
+    {# ── Quick Actions ── #}
+    <div class="actions-row">
+      <a class="action-item" href="{% url 'p2p' %}">
+        <div class="action-circle">
+          {# Send: arrow up-right #}
+          <svg viewBox="0 0 24 24"><line x1="7" y1="17" x2="17" y2="7"/><polyline points="7 7 17 7 17 17"/></svg>
         </div>
-        <div class="tx-date">{{ txn.created_at|date:"d M Y, H:i" }} &nbsp;·&nbsp;
-          {% if txn.status == 'completed' %}<span class="badge bg-teal">Done</span>
-          {% elif txn.status == 'pending' %}<span class="badge bg-amber">Pending</span>
-          {% else %}<span class="badge bg-red">{{ txn.status|title }}</span>{% endif %}
+        <span class="action-label">Send</span>
+      </a>
+      <a class="action-item" href="{% url 'qr_payment_create' %}">
+        <div class="action-circle">
+          {# Receive: arrow down-left #}
+          <svg viewBox="0 0 24 24"><line x1="17" y1="7" x2="7" y2="17"/><polyline points="17 17 7 17 7 7"/></svg>
+        </div>
+        <span class="action-label">Receive</span>
+      </a>
+      <a class="action-item" href="{% url 'mpesa_deposit' %}">
+        <div class="action-circle">
+          {# Top Up: plus #}
+          <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        </div>
+        <span class="action-label">Top Up</span>
+      </a>
+      <a class="action-item" href="{% url 'qr_payment_list' %}">
+        <div class="action-circle">
+          {# QR: hash / grid #}
+          <svg viewBox="0 0 24 24"><line x1="4" y1="9" x2="20" y2="9"/><line x1="4" y1="15" x2="20" y2="15"/><line x1="10" y1="3" x2="8" y2="21"/><line x1="16" y1="3" x2="14" y2="21"/></svg>
+        </div>
+        <span class="action-label">QR</span>
+      </a>
+    </div>
+
+    {# ── Recent Transactions ── #}
+    <div class="section-hd">
+      <span class="section-title">Recent Transactions</span>
+      <a class="section-link" href="{% url 'transactions' %}">See all</a>
+    </div>
+
+    {% if recent_txns %}
+    <div class="tx-list">
+      {% for txn in recent_txns %}
+      <div class="tx-row">
+        <div class="tx-avatar">
+          {% if txn.transaction_type == 'mpesa_deposit' %}
+            <svg viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+          {% elif txn.transaction_type == 'mpesa_withdraw' %}
+            <svg viewBox="0 0 24 24"><polyline points="23 18 13.5 8.5 8.5 13.5 1 6"/><polyline points="17 18 23 18 23 12"/></svg>
+          {% elif txn.transaction_type == 'exchange' %}
+            <svg viewBox="0 0 24 24"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+          {% elif txn.transaction_type == 'p2p_send' %}
+            <svg viewBox="0 0 24 24"><line x1="7" y1="17" x2="17" y2="7"/><polyline points="7 7 17 7 17 17"/></svg>
+          {% elif txn.transaction_type == 'p2p_receive' %}
+            <svg viewBox="0 0 24 24"><line x1="17" y1="7" x2="7" y2="17"/><polyline points="17 17 7 17 7 7"/></svg>
+          {% else %}
+            <svg viewBox="0 0 24 24"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+          {% endif %}
+        </div>
+        <div class="tx-body">
+          <div class="tx-name">
+            {% if txn.transaction_type == 'mpesa_deposit' %}M-Pesa Deposit
+            {% elif txn.transaction_type == 'mpesa_withdraw' %}M-Pesa Withdrawal
+            {% elif txn.transaction_type == 'exchange' %}Currency Exchange
+            {% elif txn.transaction_type == 'p2p_send' %}Transfer Sent
+            {% elif txn.transaction_type == 'p2p_receive' %}Transfer Received
+            {% else %}{{ txn.transaction_type|title }}{% endif %}
+          </div>
+          <div class="tx-date">{{ txn.created_at|date:"M j, Y" }}</div>
+        </div>
+        <div class="tx-amt {% if txn.transaction_type == 'mpesa_deposit' or txn.transaction_type == 'p2p_receive' %}tx-credit{% else %}tx-debit{% endif %}">
+          {% if txn.transaction_type == 'mpesa_deposit' or txn.transaction_type == 'p2p_receive' %}+{% else %}-{% endif %}{{ txn.currency }} {{ txn.amount|floatformat:2 }}
         </div>
       </div>
-      <div class="tx-amount {% if txn.transaction_type == 'mpesa_deposit' or txn.transaction_type == 'p2p_receive' %}tx-credit{% else %}tx-debit{% endif %}">
-        {% if txn.transaction_type == 'mpesa_deposit' or txn.transaction_type == 'p2p_receive' %}+{% else %}−{% endif %}{{ txn.currency }} {{ txn.amount|floatformat:2 }}
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty">
+      <div class="empty-icon">📭</div>
+      <p>No transactions yet.<br>Top up to get started.</p>
+    </div>
+    {% endif %}
+
+    {# ── Balances (collapsed below txns) ── #}
+    <div class="section-hd" style="margin-top:8px">
+      <span class="section-title">Your Balances</span>
+      <a class="section-link" href="{% url 'add_currency' %}">+ Add</a>
+    </div>
+    <div style="padding: 0 16px 8px">
+      <div class="bal-grid">
+        {% for curr, cb in balances.items %}
+        <div class="bal-card {% if curr == wallet.home_currency %}bal-home{% endif %}">
+          <div class="bal-flag">
+            {% if curr == 'KES' %}🇰🇪{% elif curr == 'TZS' %}🇹🇿{% elif curr == 'UGX' %}🇺🇬{% elif curr == 'RWF' %}🇷🇼{% elif curr == 'ETB' %}🇪🇹{% elif curr == 'USD' %}🇺🇸{% elif curr == 'EUR' %}🇪🇺{% elif curr == 'GBP' %}🇬🇧{% elif curr == 'JPY' %}🇯🇵{% elif curr == 'CNY' %}🇨🇳{% elif curr == 'AED' %}🇦🇪{% elif curr == 'INR' %}🇮🇳{% elif curr == 'CAD' %}🇨🇦{% elif curr == 'AUD' %}🇦🇺{% elif curr == 'CHF' %}🇨🇭{% elif curr == 'ZAR' %}🇿🇦{% elif curr == 'NGN' %}🇳🇬{% elif curr == 'GHS' %}🇬🇭{% else %}💱{% endif %}
+          </div>
+          <div class="bal-code">{{ curr }}</div>
+          <div class="bal-val">{{ cb.balance|floatformat:2 }}</div>
+          <div class="bal-usd" id="usd_{{ curr }}">—</div>
+        </div>
+        {% endfor %}
       </div>
     </div>
-    {% endfor %}
-  </div>
-  {% else %}
-  <div class="card" style="text-align:center;padding:3rem 2rem">
-    <div style="font-size:2.5rem;margin-bottom:1rem">📭</div>
-    <div style="font-weight:700;margin-bottom:.5rem">No transactions yet</div>
-    <p style="color:var(--ink50);font-size:.88rem">Deposit via M-Pesa to get started.</p>
-  </div>
-  {% endif %}
-</div>
+
+  </div>{# /app-scroll #}
+</div>{# /app-shell #}
 
 <script>
 const balances = { {% for curr, cb in balances.items %}"{{ curr }}": {{ cb.balance }},{% endfor %} };
@@ -129,8 +143,7 @@ const homeCurr = "{{ home_currency }}";
 fetch("{% url 'rates_api' %}")
   .then(r => r.json())
   .then(rates => {
-    document.getElementById('rateStatus').textContent = '● Live rates';
-    document.getElementById('rateStatus').style.color = 'rgba(255,255,255,.7)';
+    document.getElementById('rateStatus').textContent = '● CB live rates';
     let total = 0;
     Object.entries(balances).forEach(([curr, bal]) => {
       const el = document.getElementById('usd_' + curr);
@@ -138,8 +151,8 @@ fetch("{% url 'rates_api' %}")
       const rate = parseFloat(rates[curr + '_' + homeCurr]);
       if (rate && el) { total += bal * rate; el.textContent = '≈ ' + homeCurr + ' ' + (bal * rate).toFixed(2); }
     });
-    document.getElementById('portfolioVal').textContent = homeCurr + ' ' + total.toFixed(2);
+    document.getElementById('portfolioVal').textContent = homeCurr + ' ' + total.toLocaleString('en', {minimumFractionDigits:2, maximumFractionDigits:2});
   })
-  .catch(() => { document.getElementById('rateStatus').textContent = 'Indicative rates'; });
+  .catch(() => {});
 </script>
 {% endblock %}

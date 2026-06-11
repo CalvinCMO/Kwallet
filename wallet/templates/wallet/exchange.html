@@ -1,110 +1,101 @@
 {% extends "wallet/base.html" %}
 {% block title %}Exchange — KWallet{% endblock %}
+{% block nav_exchange %}active{% endblock %}
 {% block content %}
-<div class="page-sm">
-  {% if messages %}<div class="msgs">{% for m in messages %}<div class="msg msg-{{ m.tags }}">{{ m }}</div>{% endfor %}</div>{% endif %}
+<div class="app-shell">
+  <div class="app-scroll">
 
-  <div class="ph"><h1>Exchange</h1><p>Swap between your currencies at live market rates.</p></div>
-
-  <div class="fee-box">
-    💡 <strong>Tiered exchange fee</strong><br>
-    <span style="font-size:.82rem;line-height:1.7">
-      ≤ $500: <strong>1.5%</strong> &nbsp;·&nbsp; $500–$2k: <strong>1.0%</strong> &nbsp;·&nbsp; $2k–$10k: <strong>0.75%</strong> &nbsp;·&nbsp; &gt;$10k: <strong>0.5%</strong>
-    </span>
-  </div>
-
-  <div class="card" style="margin-bottom:1rem">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
-      <div class="card-title" style="margin:0">Convert</div>
-      <span id="rateSource" class="mono" style="font-size:.7rem;color:var(--ink30)">loading…</span>
+    <div class="home-header" style="padding-bottom:8px">
+      <div>
+        <div class="home-greeting">Swap currencies</div>
+        <div class="home-name">Exchange</div>
+      </div>
+      <span id="rateSource" style="font-size:12px;color:var(--ink-4);font-family:'JetBrains Mono',monospace;padding-top:8px">loading…</span>
     </div>
-    <form method="post" id="exchForm">
-      {% csrf_token %}
-      <div class="fg2">
-        <div class="fg">
-          <label class="fl">From</label>
-          <select class="fs" name="from_currency" id="fromCurr" onchange="updatePreview()">
-            {% for val, label in form.from_currency.field.choices %}<option value="{{ val }}">{{ label }}</option>{% endfor %}
-          </select>
+
+    {% if messages %}
+    <div style="padding:0 16px 8px">
+      <div class="msgs">{% for m in messages %}<div class="msg msg-{{ m.tags }}">{{ m }}</div>{% endfor %}</div>
+    </div>
+    {% endif %}
+
+    {# Converter card #}
+    <div style="padding:0 16px">
+      <div class="card" style="margin-bottom:12px">
+        <div class="fee-box" style="margin-bottom:1rem;border-radius:var(--r-sm)">
+          💡 <strong>Tiered fee:</strong> ≤$500 → 1.5% &nbsp;·&nbsp; $500–2k → 1.0% &nbsp;·&nbsp; $2k–10k → 0.75% &nbsp;·&nbsp; >$10k → 0.5%
         </div>
-        <div class="fg">
-          <label class="fl">To</label>
-          <select class="fs" name="to_currency" id="toCurr" onchange="updatePreview()">
-            {% for val, label in form.to_currency.field.choices %}<option value="{{ val }}">{{ label }}</option>{% endfor %}
-          </select>
+        <form method="post">
+          {% csrf_token %}
+          <div class="fg2">
+            <div class="fg">
+              <label class="fl">From</label>
+              <select class="fs" name="from_currency" id="fromCurr" onchange="updatePreview()">
+                {% for val, label in form.from_currency.field.choices %}<option value="{{ val }}">{{ label }}</option>{% endfor %}
+              </select>
+            </div>
+            <div class="fg">
+              <label class="fl">To</label>
+              <select class="fs" name="to_currency" id="toCurr" onchange="updatePreview()">
+                {% for val, label in form.to_currency.field.choices %}<option value="{{ val }}">{{ label }}</option>{% endfor %}
+              </select>
+            </div>
+          </div>
+          <div class="fg">
+            <label class="fl">Amount</label>
+            <input class="fi" type="number" name="amount" id="amtInput" step="0.0001" min="0.01" placeholder="0.00" required oninput="updatePreview()">
+            {% for e in form.amount.errors %}<div class="fe">{{ e }}</div>{% endfor %}
+          </div>
+          {# Live preview #}
+          <div class="prev" id="preview" style="margin-bottom:1rem">
+            <div class="prev-main" id="prevLine"></div>
+            <div class="prev-rate" id="prevRate"></div>
+            <div class="prev-fee"  id="prevFee"></div>
+          </div>
+          {% if form.non_field_errors %}<div class="msg msg-error" style="margin-bottom:1rem">{{ form.non_field_errors }}</div>{% endif %}
+          <button type="submit" class="btn btn-primary btn-block" style="border-radius:var(--r-md);padding:.75rem">Exchange Now</button>
+        </form>
+      </div>
+
+      {# Live rates card #}
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.85rem">
+          <span class="card-title" style="margin:0">Live Rates</span>
+          <span style="font-size:.68rem;color:var(--ink-4);font-family:'JetBrains Mono',monospace" id="ratesTs">—</span>
+        </div>
+        <div class="rg" id="ratesGrid">
+          {% for key, rate in flat_rates.items %}
+          <div class="rr"><span class="rr-pair">{{ key|slice:":3" }} / {{ key|slice:"4:" }}</span><span class="rr-val">{{ rate }}</span></div>
+          {% endfor %}
         </div>
       </div>
-      <div class="fg">
-        <label class="fl">Amount</label>
-        <input class="fi" type="number" name="amount" id="amtInput" step="0.0001" min="0.01" placeholder="0.0000" required oninput="updatePreview()">
-        {% for e in form.amount.errors %}<div class="fe">{{ e }}</div>{% endfor %}
-      </div>
-      <div class="prev" id="preview">
-        <div class="prev-main" id="prevLine"></div>
-        <div class="prev-rate" id="prevRate"></div>
-        <div class="prev-fee" id="prevFee"></div>
-      </div>
-      {% if form.non_field_errors %}<div class="msg msg-error" style="margin-bottom:1rem">{{ form.non_field_errors }}</div>{% endif %}
-      <button type="submit" class="btn btn-primary btn-block">Exchange Now →</button>
-    </form>
-  </div>
-
-  <div class="card">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.85rem">
-      <div class="card-title" style="margin:0">Live Rates</div>
-      <span class="mono" style="font-size:.68rem;color:var(--ink30)" id="ratesTs">—</span>
     </div>
-    <div class="rg" id="ratesGrid">
-      {% for key, rate in flat_rates.items %}
-      {% if key|slice:":3" in active_currs and key|slice:"4:" in active_currs %}
-      <div class="rr"><span class="rr-pair">{{ key|slice:":3" }} → {{ key|slice:"4:" }}</span><span class="rr-val">{{ rate }}</span></div>
-      {% endif %}
-      {% endfor %}
-    </div>
-  </div>
 
-  <div style="margin-top:1rem;text-align:center"><a href="{% url 'dashboard' %}" class="btn btn-white btn-sm">← Dashboard</a></div>
+  </div>
 </div>
 
 <script>
-const EXCHANGE_FEE_TIERS = [[0,500,.015],[500.01,2000,.01],[2000.01,10000,.0075],[10000.01,null,.005]];
+const TIERS = [[0,500,.015],[500.01,2000,.01],[2000.01,10000,.0075],[10000.01,null,.005]];
 let liveRates = {};
+function feeRate(usd){ for(const[mn,mx,r]of TIERS){if(mx===null?usd>=mn:usd>=mn&&usd<=mx)return r;} return .015; }
+function feeLabel(usd){ if(usd<=500)return'1.5%'; if(usd<=2000)return'1.0%'; if(usd<=10000)return'0.75%'; return'0.5%'; }
 
-function getFeeRate(usd) {
-  for (const [mn,mx,r] of EXCHANGE_FEE_TIERS) { if (mx===null?usd>=mn:usd>=mn&&usd<=mx) return r; }
-  return .015;
-}
-function getFeeLabel(usd) {
-  if (usd<=500) return '1.5% (≤$500)';
-  if (usd<=2000) return '1.0% ($500–$2k)';
-  if (usd<=10000) return '0.75% ($2k–$10k)';
-  return '0.5% (>$10k)';
-}
-
-fetch("{% url 'rates_api' %}")
-  .then(r=>r.json())
-  .then(data=>{
-    liveRates=data;
-    document.getElementById('rateSource').textContent='● Live (ECB)';
-    document.getElementById('rateSource').style.color='var(--teal)';
-    const grid=document.getElementById('ratesGrid'); grid.innerHTML='';
-    const active={{ active_currs|safe }};
-    Object.entries(data).forEach(([key,rate])=>{
-      const [f,t]=key.split('_');
-      if(!active.includes(f)||!active.includes(t)) return;
-      const d=document.createElement('div'); d.className='rr';
-      d.innerHTML=`<span class="rr-pair">${f} → ${t}</span><span class="rr-val">${parseFloat(rate).toFixed(4)}</span>`;
-      grid.appendChild(d);
-    });
-    document.getElementById('ratesTs').textContent='Updated '+new Date().toLocaleTimeString('en',{hour:'2-digit',minute:'2-digit'});
-    updatePreview();
-  })
-  .catch(()=>{
-    document.getElementById('rateSource').textContent='● Indicative';
-    document.getElementById('rateSource').style.color='var(--amber)';
-    {% for key, rate in flat_rates.items %}liveRates["{{ key }}"]="{{ rate }}";{% endfor %}
-    updatePreview();
+fetch("{% url 'rates_api' %}").then(r=>r.json()).then(data=>{
+  liveRates=data;
+  document.getElementById('rateSource').textContent='● Live';
+  document.getElementById('rateSource').style.color='var(--teal)';
+  const grid=document.getElementById('ratesGrid'); grid.innerHTML='';
+  const active={{ active_currs|safe }};
+  Object.entries(data).forEach(([key,rate])=>{
+    const[f,t]=key.split('_');
+    if(!active.includes(f)||!active.includes(t))return;
+    const d=document.createElement('div');d.className='rr';
+    d.innerHTML=`<span class="rr-pair">${f} / ${t}</span><span class="rr-val">${parseFloat(rate).toFixed(4)}</span>`;
+    grid.appendChild(d);
   });
+  document.getElementById('ratesTs').textContent=new Date().toLocaleTimeString('en',{hour:'2-digit',minute:'2-digit'});
+  updatePreview();
+}).catch(()=>{ document.getElementById('rateSource').textContent='Indicative'; {% for k,v in flat_rates.items %}liveRates["{{ k }}"]="{{ v }}";{% endfor %} });
 
 function updatePreview(){
   const from=document.getElementById('fromCurr').value;
@@ -114,17 +105,16 @@ function updatePreview(){
   if(!amt||amt<=0||from===to){box.style.display='none';return;}
   const rate=parseFloat(liveRates[from+'_'+to]);
   if(!rate){box.style.display='none';return;}
-  const fromToUsd=parseFloat(liveRates[from+'_USD']||(from==='USD'?'1':'0'));
-  const usdEquiv=fromToUsd>0?amt*fromToUsd:amt;
-  const feeRate=getFeeRate(usdEquiv);
-  const feeLabel=getFeeLabel(usdEquiv);
+  const toUsd=parseFloat(liveRates[from+'_USD']||(from==='USD'?1:0));
+  const usdVal=toUsd>0?amt*toUsd:amt;
+  const fr=feeRate(usdVal); const fl=feeLabel(usdVal);
   const converted=(amt*rate).toFixed(4);
-  const fee=(amt*feeRate).toFixed(4);
+  const fee=(amt*fr).toFixed(4);
   const total=(amt+parseFloat(fee)).toFixed(4);
   box.style.display='block';
-  document.getElementById('prevLine').textContent=amt+' '+from+'  →  '+converted+' '+to;
-  document.getElementById('prevRate').textContent='1 '+from+' = '+rate.toFixed(6)+' '+to;
-  document.getElementById('prevFee').textContent='Fee: '+fee+' '+from+' ('+feeLabel+')  |  Total deducted: '+total+' '+from;
+  document.getElementById('prevLine').textContent=`${amt} ${from}  →  ${converted} ${to}`;
+  document.getElementById('prevRate').textContent=`1 ${from} = ${rate.toFixed(6)} ${to}`;
+  document.getElementById('prevFee').textContent=`Fee: ${fee} ${from} (${fl})  ·  Total deducted: ${total} ${from}`;
 }
 </script>
 {% endblock %}

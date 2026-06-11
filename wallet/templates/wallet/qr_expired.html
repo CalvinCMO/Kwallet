@@ -1,43 +1,36 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Link Expired — KWallet</title>
+  <meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Link Unavailable — KWallet</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
-    :root{--teal:#1D9E75;--teal-dk:#0F6E56;--teal-50:#E1F5EE;--red-lt:#FEE2E2;--bg:#F0F4F3;--ink:#111827;--ink50:#6B7280;--r8:8px;--r12:12px}
+    :root{--teal:#1DA57A;--teal-dk:#0F6E56;--teal-50:#E6F7F1;--red-lt:#FDEAEA;--bg:#F0F4F3;--surface:#fff;--ink:#0D1B12;--ink-3:#6B7D73;--ink-4:#9EADA6;--border:#E2EAE6;--r-md:14px;--r-lg:20px}
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-    body{background:var(--bg);color:var(--ink);font-family:'Inter',sans-serif;min-height:100vh;
-         display:flex;align-items:center;justify-content:center;padding:1.5rem;text-align:center}
-    .wrap{max-width:400px}
-    .icon-wrap{width:80px;height:80px;background:var(--red-lt);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:2rem;margin:0 auto 1.25rem;border:3px solid #fecaca}
-    h2{font-size:1.5rem;font-weight:800;letter-spacing:-.03em;margin-bottom:.5rem}
-    p{color:var(--ink50);font-size:.9rem;line-height:1.6}
-    .status-badge{display:inline-block;margin-top:1rem;padding:.25rem .85rem;border-radius:20px;
-                  font-size:.72rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;background:var(--red-lt);color:#991b1b}
-    .logo{display:flex;align-items:center;gap:.5rem;justify-content:center;margin-bottom:2rem;text-decoration:none}
-    .logo-icon{width:36px;height:36px;background:linear-gradient(135deg,var(--teal),var(--teal-dk));border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:1rem}
-    .logo-name{font-size:1.2rem;font-weight:800;color:var(--ink);letter-spacing:-.04em}
-    .logo-name span{color:var(--teal)}
+    body{background:var(--bg);color:var(--ink);font-family:"Inter",sans-serif;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:1.5rem;text-align:center;-webkit-font-smoothing:antialiased}
+    .wrap{max-width:360px}
+    .logo{display:flex;align-items:center;gap:.5rem;justify-content:center;margin-bottom:1.75rem;text-decoration:none}
+    .logo-box{width:34px;height:34px;background:linear-gradient(135deg,var(--teal),var(--teal-dk));border-radius:9px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800}
+    .logo-name{font-size:1.1rem;font-weight:800;color:var(--ink);letter-spacing:-.03em}.logo-name span{color:var(--teal)}
+    .icon{width:76px;height:76px;background:var(--red-lt);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:2rem;margin:0 auto 1.25rem;border:3px solid #fecaca}
+    h2{font-size:1.35rem;font-weight:800;letter-spacing:-.03em;margin-bottom:.5rem}
+    p{color:var(--ink-3);font-size:.88rem;line-height:1.65}
+    .badge{display:inline-block;margin-top:.85rem;padding:.2rem .75rem;border-radius:20px;font-size:.65rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;background:var(--red-lt);color:#991b1b;border:1px solid #fecaca}
   </style>
 </head>
 <body>
 <div class="wrap">
-  <a href="/" class="logo">
-    <div class="logo-icon">💳</div>
-    <span class="logo-name">K<span>Wallet</span></span>
-  </a>
-  <div class="icon-wrap">🔗</div>
-  <h2>This payment link is no longer active</h2>
+  <a href="/" class="logo"><div class="logo-box">K</div><span class="logo-name">K<span>Wallet</span></span></a>
+  <div class="icon">🔗</div>
+  <h2>This link is no longer active</h2>
   <p>
     {% if pr.status == 'paid' %}This was a one-time payment link and has already been used.
-    {% elif pr.status == 'expired' %}This payment link has expired.
+    {% elif pr.status == 'expired' %}This payment link has passed its expiry date.
     {% else %}This payment link has been disabled by the owner.{% endif %}
-    <br>Please contact the person who shared it with you.
+    <br>Please contact the person who shared it.
   </p>
-  <div class="status-badge">{{ pr.status|upper }}</div>
+  <div class="badge">{{ pr.status|upper }}</div>
 </div>
 </body>
 </html>

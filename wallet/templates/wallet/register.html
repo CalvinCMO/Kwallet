@@ -5,7 +5,7 @@
   <div class="auth-hero">
     <div class="auth-logo">🌍</div>
     <h1 class="auth-h1">Create your wallet</h1>
-    <p class="auth-sub">Multi-currency · East Africa · M-Pesa powered</p>
+    <p class="auth-sub">Multi-currency · M-Pesa powered</p>
   </div>
 
   {% if messages %}
@@ -22,7 +22,7 @@
       </div>
       <div class="fg2">
         <div class="fg">
-          <label class="fl">Phone Number</label>
+          <label class="fl">Phone</label>
           <input class="fi" type="tel" name="phone" placeholder="0712 345 678" required>
           {% for e in form.phone.errors %}<div class="fe">{{ e }}</div>{% endfor %}
         </div>
@@ -47,7 +47,7 @@
       </div>
       <hr class="div">
       <div class="curr-section">
-        <div class="curr-section-title">✅ Included automatically — All East African Currencies</div>
+        <div class="curr-section-title">✅ Included — All East African Currencies</div>
         <div style="display:flex;gap:.5rem;flex-wrap:wrap">
           <span class="country-badge country-badge-teal">🇰🇪 KES</span>
           <span class="country-badge country-badge-teal">🇹🇿 TZS</span>
@@ -57,12 +57,11 @@
         </div>
       </div>
       <div class="fg">
-        <label class="fl">Choose 5 International Currencies</label>
-        <div class="fh" style="margin-bottom:.65rem">Pick exactly 5 — you can add more later.</div>
+        <label class="fl">Add 5 International Currencies</label>
         <div class="curr-picker">
           {% for i in "12345" %}
           <div class="fg">
-            <label class="fl">Currency {{ i }}</label>
+            <label class="fl">Pick {{ i }}</label>
             <select class="fs" name="currency_{{ i }}">
               {% if i == "1" %}{% for val, label in form.currency_1.field.choices %}<option value="{{ val }}">{{ label }}</option>{% endfor %}
               {% elif i == "2" %}{% for val, label in form.currency_2.field.choices %}<option value="{{ val }}" {% if val == "EUR" %}selected{% endif %}>{{ label }}</option>{% endfor %}
@@ -76,9 +75,9 @@
         </div>
         {% if form.non_field_errors %}<div class="fe">{{ form.non_field_errors }}</div>{% endif %}
       </div>
-      <button type="submit" class="btn btn-primary btn-block" style="margin-top:.5rem">Create Wallet →</button>
+      <button type="submit" class="btn btn-primary btn-block" style="border-radius:var(--r-md);padding:.8rem">Create Wallet</button>
     </form>
   </div>
-  <div class="auth-foot">Already have a wallet? <a href="{% url 'login' %}">Sign in</a></div>
+  <div class="auth-foot">Have a wallet? <a href="{% url 'login' %}">Sign in</a></div>
 </div>
 {% endblock %}
