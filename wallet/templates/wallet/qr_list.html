@@ -2,71 +2,49 @@
 {% block title %}Payment Links — KWallet{% endblock %}
 {% block content %}
 <div class="page">
-
-  {% if messages %}
-  <div class="msgs">{% for m in messages %}<div class="msg msg-{{ m.tags }}"><span class="msg-icon">{% if m.tags == 'success' %}✅{% elif m.tags == 'error' %}❌{% else %}ℹ️{% endif %}</span>{{ m }}</div>{% endfor %}</div>
-  {% endif %}
+  {% if messages %}<div class="msgs">{% for m in messages %}<div class="msg msg-{{ m.tags }}">{{ m }}</div>{% endfor %}</div>{% endif %}
 
   <div class="ph" style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:1rem">
     <div>
-      <h1>📲 Payment Links</h1>
+      <h1>Payment Links</h1>
       <p>Generate QR codes that let anyone pay you via M-Pesa — no KWallet account needed.</p>
     </div>
     <a href="{% url 'qr_payment_create' %}" class="btn btn-primary">+ New Payment Link</a>
   </div>
 
   {% if requests %}
-  <div class="tbl-wrap">
-    <table class="tbl">
-      <thead>
-        <tr>
-          <th>Note</th>
-          <th>Amount</th>
-          <th>Type</th>
-          <th>Status</th>
-          <th>Expires</th>
-          <th>Created</th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for pr in requests %}
-        <tr>
-          <td style="font-weight:600">{{ pr.note|default:"—" }}</td>
-          <td class="mono">{% if pr.amount %}KES {{ pr.amount|floatformat:0 }}{% else %}<span style="color:var(--ink30)">Open</span>{% endif %}</td>
-          <td>
-            {% if pr.single_use %}
-              <span class="badge" style="background:var(--amber-lt);color:#78350f">One-time</span>
-            {% else %}
-              <span class="badge bg-green">Reusable</span>
-            {% endif %}
-          </td>
-          <td>
-            {% if pr.status == 'active' %}<span class="badge bg-green">Active</span>
-            {% elif pr.status == 'paid' %}<span class="badge bg-blue" style="background:var(--blue-lt);color:#1e40af">Paid</span>
-            {% elif pr.status == 'expired' %}<span class="badge" style="background:var(--ink10);color:var(--ink30)">Expired</span>
-            {% else %}<span class="badge bg-red">Disabled</span>{% endif %}
-          </td>
-          <td class="mono" style="font-size:.75rem;color:var(--ink30)">
-            {{ pr.expires_at|date:"d M Y, H:i"|default:"Never" }}
-          </td>
-          <td class="mono" style="font-size:.75rem;color:var(--ink30)">{{ pr.created_at|date:"d M Y" }}</td>
-          <td style="white-space:nowrap">
-            <a href="{% url 'qr_payment_detail' pr.token %}" class="btn btn-white btn-sm">View QR</a>
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+  <div class="tx-list">
+    {% for pr in requests %}
+    <div class="tx-item" style="align-items:flex-start;padding:16px">
+      <div class="tx-avatar" style="margin-top:2px">📷</div>
+      <div class="tx-info">
+        <div class="tx-name">{{ pr.note|default:"Untitled link" }}</div>
+        <div class="tx-date">
+          {% if pr.amount %}<strong>KES {{ pr.amount|floatformat:0 }}</strong>{% else %}<span style="color:var(--ink30)">Open amount</span>{% endif %}
+          &nbsp;·&nbsp;
+          {% if pr.single_use %}<span class="badge bg-amber">One-time</span>{% else %}<span class="badge bg-teal">Reusable</span>{% endif %}
+          &nbsp;·&nbsp;
+          {% if pr.status == 'active' %}<span class="badge bg-teal">Active</span>
+          {% elif pr.status == 'paid' %}<span class="badge bg-blue">Paid</span>
+          {% elif pr.status == 'expired' %}<span class="badge bg-gray">Expired</span>
+          {% else %}<span class="badge bg-red">Disabled</span>{% endif %}
+        </div>
+        <div class="tx-date" style="margin-top:2px">
+          Created {{ pr.created_at|date:"d M Y" }}
+          {% if pr.expires_at %}&nbsp;·&nbsp;Expires {{ pr.expires_at|date:"d M Y, H:i" }}{% endif %}
+        </div>
+      </div>
+      <a href="{% url 'qr_payment_detail' pr.token %}" class="btn btn-white btn-sm" style="flex-shrink:0">View QR</a>
+    </div>
+    {% endfor %}
   </div>
   {% else %}
   <div class="card" style="text-align:center;padding:3rem 2rem">
     <div style="font-size:3rem;margin-bottom:1rem">📷</div>
-    <div style="font-family:'Fraunces',serif;font-size:1.2rem;font-weight:700;margin-bottom:.5rem">No payment links yet</div>
-    <p style="color:var(--ink60);margin-bottom:1.5rem">Create your first QR code and start receiving M-Pesa payments from anyone.</p>
+    <div style="font-size:1.2rem;font-weight:700;margin-bottom:.5rem">No payment links yet</div>
+    <p style="color:var(--ink50);margin-bottom:1.5rem">Create your first QR code and start receiving M-Pesa payments from anyone.</p>
     <a href="{% url 'qr_payment_create' %}" class="btn btn-primary">Create Payment Link</a>
   </div>
   {% endif %}
-
 </div>
 {% endblock %}

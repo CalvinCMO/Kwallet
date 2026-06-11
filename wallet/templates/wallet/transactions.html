@@ -2,9 +2,9 @@
 {% block title %}Transactions — KWallet{% endblock %}
 {% block content %}
 <div class="page">
-  {% if messages %}<div class="msgs">{% for m in messages %}<div class="msg msg-{{ m.tags }}"><span class="msg-icon">ℹ️</span>{{ m }}</div>{% endfor %}</div>{% endif %}
+  {% if messages %}<div class="msgs">{% for m in messages %}<div class="msg msg-{{ m.tags }}">{{ m }}</div>{% endfor %}</div>{% endif %}
 
-  <div class="ph"><h1>Transaction History</h1><p>Full audit trail of all wallet activity including fees collected.</p></div>
+  <div class="ph"><h1>Transaction History</h1><p>Full audit trail of all wallet activity.</p></div>
 
   <form method="get" class="filter-bar">
     <select class="fsel" name="currency" onchange="this.form.submit()">
@@ -22,43 +22,53 @@
     {% if currency_filter or type_filter %}<a href="{% url 'transactions' %}" class="btn btn-white btn-sm">✕ Clear</a>{% endif %}
   </form>
 
-  <div class="tbl-wrap">
-    {% if txns %}
-    <table class="tbl">
-      <thead>
-        <tr><th>Type</th><th>Currency</th><th>Amount</th><th>Fee</th><th>Net</th><th>Status</th><th>Reference</th><th>Details</th><th>Date</th></tr>
-      </thead>
-      <tbody>
-        {% for txn in txns %}
-        <tr>
-          <td>
-            {% if 'mpesa' in txn.transaction_type %}<span class="badge bg-mpesa">{{ txn.transaction_type|upper }}</span>
-            {% elif txn.transaction_type == 'p2p_receive' %}<span class="badge bg-green">P2P RECEIVE</span>
-            {% elif txn.transaction_type == 'p2p_send' %}<span class="badge bg-red">P2P SEND</span>
-            {% elif txn.transaction_type == 'exchange' %}<span class="badge bg-blue">EXCHANGE</span>
-            {% else %}<span class="badge bg-amber">{{ txn.transaction_type|upper }}</span>{% endif %}
-          </td>
-          <td class="mono" style="font-weight:500">{{ txn.currency }}</td>
-          <td class="mono">{{ txn.amount|floatformat:4 }}</td>
-          <td class="mono" style="color:{% if txn.fee > 0 %}var(--amber){% else %}var(--ink30){% endif %}">{{ txn.fee|floatformat:4 }}</td>
-          <td class="mono" style="color:var(--green-dk)">{{ txn.net_amount|floatformat:4 }}</td>
-          <td>
-            {% if txn.status == 'completed' %}<span class="badge bg-green">Done</span>
-            {% elif txn.status == 'pending' %}<span class="badge bg-amber">Pending</span>
-            {% elif txn.status == 'refunded' %}<span class="badge bg-blue">Refunded</span>
-            {% else %}<span class="badge bg-red">Failed</span>{% endif %}
-          </td>
-          <td class="mono" style="font-size:.7rem;color:var(--ink30)">{{ txn.reference|default:"—"|truncatechars:14 }}</td>
-          <td style="color:var(--ink60);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.76rem">{{ txn.details }}</td>
-          <td class="mono" style="font-size:.72rem;color:var(--ink30);white-space:nowrap">{{ txn.created_at|date:"d M Y, H:i" }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    {% else %}
-    <div class="empty"><div class="empty-icon">📭</div><p>No transactions found{% if currency_filter or type_filter %} for this filter{% endif %}.</p></div>
-    {% endif %}
+  {% if txns %}
+  <div class="tx-list">
+    {% for txn in txns %}
+    <div class="tx-item">
+      <div class="tx-avatar">
+        {% if 'mpesa' in txn.transaction_type %}📲
+        {% elif txn.transaction_type == 'exchange' %}🔄
+        {% elif txn.transaction_type == 'p2p_send' %}↗️
+        {% elif txn.transaction_type == 'p2p_receive' %}↙️
+        {% else %}💳{% endif %}
+      </div>
+      <div class="tx-info">
+        <div class="tx-name">
+          {% if txn.transaction_type == 'mpesa_deposit' %}M-Pesa Deposit
+          {% elif txn.transaction_type == 'mpesa_withdraw' %}M-Pesa Withdrawal
+          {% elif txn.transaction_type == 'exchange' %}Currency Exchange
+          {% elif txn.transaction_type == 'p2p_send' %}P2P Sent
+          {% elif txn.transaction_type == 'p2p_receive' %}P2P Received
+          {% else %}{{ txn.transaction_type|title }}{% endif %}
+          &nbsp;<span class="badge bg-gray mono" style="font-size:.6rem">{{ txn.currency }}</span>
+        </div>
+        <div class="tx-date">
+          {{ txn.created_at|date:"d M Y, H:i" }}
+          {% if txn.reference %}&nbsp;·&nbsp;<span class="mono" style="font-size:.7rem;color:var(--ink30)">{{ txn.reference|truncatechars:12 }}</span>{% endif %}
+          &nbsp;·&nbsp;
+          {% if txn.status == 'completed' %}<span class="badge bg-teal">Done</span>
+          {% elif txn.status == 'pending' %}<span class="badge bg-amber">Pending</span>
+          {% elif txn.status == 'refunded' %}<span class="badge bg-blue">Refunded</span>
+          {% else %}<span class="badge bg-red">Failed</span>{% endif %}
+          {% if txn.fee > 0 %}&nbsp;<span class="badge bg-amber mono">Fee: {{ txn.fee|floatformat:4 }}</span>{% endif %}
+        </div>
+        {% if txn.details %}<div class="tx-date" style="margin-top:2px;color:var(--ink50)">{{ txn.details }}</div>{% endif %}
+      </div>
+      <div class="tx-amount {% if txn.transaction_type == 'mpesa_deposit' or txn.transaction_type == 'p2p_receive' %}tx-credit{% else %}tx-debit{% endif %}">
+        {% if txn.transaction_type == 'mpesa_deposit' or txn.transaction_type == 'p2p_receive' %}+{% else %}−{% endif %}{{ txn.amount|floatformat:4 }}
+      </div>
+    </div>
+    {% endfor %}
   </div>
+  {% else %}
+  <div class="card" style="text-align:center;padding:3rem 2rem">
+    <div style="font-size:2.5rem;margin-bottom:1rem">📭</div>
+    <div style="font-weight:700;margin-bottom:.5rem">No transactions found</div>
+    {% if currency_filter or type_filter %}<p style="color:var(--ink50)">Try clearing the filters above.</p>{% endif %}
+  </div>
+  {% endif %}
+
   <div style="margin-top:1.25rem"><a href="{% url 'dashboard' %}" class="btn btn-white btn-sm">← Dashboard</a></div>
 </div>
 {% endblock %}

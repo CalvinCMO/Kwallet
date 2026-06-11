@@ -4,7 +4,7 @@
 <div class="page">
 
   {% if messages %}
-  <div class="msgs">{% for m in messages %}<div class="msg msg-{{ m.tags }}"><span class="msg-icon">{% if m.tags == 'success' %}✅{% elif m.tags == 'error' %}❌{% elif m.tags == 'warning' %}⚠️{% else %}ℹ️{% endif %}</span>{{ m }}</div>{% endfor %}</div>
+  <div class="msgs">{% for m in messages %}<div class="msg msg-{{ m.tags }}">{{ m }}</div>{% endfor %}</div>
   {% endif %}
 
   <!-- Portfolio Banner -->
@@ -35,34 +35,44 @@
         {% if curr == 'KES' %}🇰🇪{% elif curr == 'TZS' %}🇹🇿{% elif curr == 'UGX' %}🇺🇬{% elif curr == 'RWF' %}🇷🇼{% elif curr == 'ETB' %}🇪🇹{% elif curr == 'USD' %}🇺🇸{% elif curr == 'EUR' %}🇪🇺{% elif curr == 'GBP' %}🇬🇧{% elif curr == 'JPY' %}🇯🇵{% elif curr == 'CNY' %}🇨🇳{% elif curr == 'AED' %}🇦🇪{% elif curr == 'INR' %}🇮🇳{% elif curr == 'CAD' %}🇨🇦{% elif curr == 'AUD' %}🇦🇺{% elif curr == 'CHF' %}🇨🇭{% elif curr == 'ZAR' %}🇿🇦{% elif curr == 'NGN' %}🇳🇬{% elif curr == 'GHS' %}🇬🇭{% else %}💱{% endif %}
       </div>
       <div class="bal-code">{{ curr }}</div>
-      <div class="bal-val">{{ cb.balance|floatformat:2 }}</div>
-      <div class="bal-usd" id="usd_{{ curr }}">—</div>
+      <div class="bal-val mono">{{ cb.balance|floatformat:2 }}</div>
+      <div class="bal-usd mono" id="usd_{{ curr }}">—</div>
     </div>
     {% endfor %}
   </div>
 
-  <!-- Actions -->
-  <div class="sec-row"><span class="sec-label">Actions</span></div>
+  <!-- Quick Actions -->
+  <div class="sec-row"><span class="sec-label">Quick Actions</span></div>
   <div class="act-grid" style="margin-bottom:2.5rem">
-    <a href="{% url 'mpesa_deposit' %}"  class="act-btn act-mpesa"><span class="act-icon">📲</span>M-Pesa Deposit</a>
-    <a href="{% url 'mpesa_withdraw' %}" class="act-btn act-mpesa"><span class="act-icon">💸</span>M-Pesa Withdraw</a>
-    <a href="{% url 'exchange' %}"       class="act-btn act-exc"><span class="act-icon">🔄</span>Exchange</a>
-    <a href="{% url 'p2p' %}"            class="act-btn act-p2p"><span class="act-icon">↗️</span>P2P Transfer</a>
-    <a href="{% url 'qr_payment_create' %}" class="act-btn" style="background:linear-gradient(135deg,#f0fdf4,#dcfce7);border-color:var(--green-md);color:var(--green-dk)"><span class="act-icon">📷</span>Receive via QR</a>
+    <a href="{% url 'mpesa_deposit' %}"  class="act-btn act-mpesa">
+      <div class="act-icon">📲</div>M-Pesa Deposit
+    </a>
+    <a href="{% url 'mpesa_withdraw' %}" class="act-btn act-mpesa">
+      <div class="act-icon">💸</div>M-Pesa Withdraw
+    </a>
+    <a href="{% url 'exchange' %}"       class="act-btn act-exc">
+      <div class="act-icon">🔄</div>Exchange
+    </a>
+    <a href="{% url 'p2p' %}"            class="act-btn act-p2p">
+      <div class="act-icon">↗️</div>P2P Transfer
+    </a>
+    <a href="{% url 'qr_payment_create' %}" class="act-btn act-qr">
+      <div class="act-icon">📷</div>Receive via QR
+    </a>
   </div>
 
-  <!-- Fee schedule -->
+  <!-- Fee Schedule -->
   <div class="sec-row"><span class="sec-label">Fee Schedule</span></div>
   <div class="tbl-wrap" style="margin-bottom:2rem">
     <table class="tbl">
       <thead><tr><th>Operation</th><th>Fee</th><th>Note</th></tr></thead>
       <tbody>
-        <tr><td>M-Pesa Deposit</td><td class="mono"><span class="badge bg-green">0%</span></td><td style="color:var(--ink60);font-size:.78rem">Free — we absorb it</td></tr>
-        <tr><td>M-Pesa Withdrawal</td><td class="mono">1%</td><td style="color:var(--ink60);font-size:.78rem">Min KES 10</td></tr>
-        <tr><td>Currency Exchange</td><td class="mono">1.5%</td><td style="color:var(--ink60);font-size:.78rem">On amount exchanged</td></tr>
-        <tr><td>P2P Transfer</td><td class="mono">0.5%</td><td style="color:var(--ink60);font-size:.78rem">Min KES 5 equivalent</td></tr>
-        <tr><td>Bank Deposit</td><td class="mono">0.5%</td><td style="color:var(--ink60);font-size:.78rem">On received amount</td></tr>
-        <tr><td>Bank Withdrawal</td><td class="mono">1.5%</td><td style="color:var(--ink60);font-size:.78rem">Min KES 50 equivalent</td></tr>
+        <tr><td>M-Pesa Deposit</td><td><span class="badge bg-teal">0%</span></td><td style="color:var(--ink50);font-size:.78rem">Free — we absorb it</td></tr>
+        <tr><td>M-Pesa Withdrawal</td><td class="mono">1%</td><td style="color:var(--ink50);font-size:.78rem">Min KES 10</td></tr>
+        <tr><td>Currency Exchange</td><td class="mono">1.5%</td><td style="color:var(--ink50);font-size:.78rem">On amount exchanged</td></tr>
+        <tr><td>P2P Transfer</td><td class="mono">0.5%</td><td style="color:var(--ink50);font-size:.78rem">Min KES 5 equivalent</td></tr>
+        <tr><td>Bank Deposit</td><td class="mono">0.5%</td><td style="color:var(--ink50);font-size:.78rem">On received amount</td></tr>
+        <tr><td>Bank Withdrawal</td><td class="mono">1.5%</td><td style="color:var(--ink50);font-size:.78rem">Min KES 50 equivalent</td></tr>
       </tbody>
     </table>
   </div>
@@ -72,59 +82,61 @@
     <span class="sec-label">Recent Transactions</span>
     <a href="{% url 'transactions' %}" class="btn btn-white btn-sm">View All</a>
   </div>
-  <div class="tbl-wrap">
-    {% if recent_txns %}
-    <table class="tbl">
-      <thead><tr><th>Type</th><th>Currency</th><th>Amount</th><th>Fee</th><th>Status</th><th>Details</th><th>Date</th></tr></thead>
-      <tbody>
-        {% for txn in recent_txns %}
-        <tr>
-          <td>
-            {% if 'mpesa' in txn.transaction_type %}<span class="badge bg-mpesa">{{ txn.transaction_type|upper }}</span>
-            {% elif txn.transaction_type == 'p2p_receive' or txn.transaction_type == 'exchange' %}<span class="badge bg-green">{{ txn.transaction_type|upper }}</span>
-            {% elif txn.transaction_type == 'p2p_send' %}<span class="badge bg-red">{{ txn.transaction_type|upper }}</span>
-            {% else %}<span class="badge bg-blue">{{ txn.transaction_type|upper }}</span>{% endif %}
-          </td>
-          <td class="mono" style="font-weight:500">{{ txn.currency }}</td>
-          <td class="mono">{{ txn.amount|floatformat:2 }}</td>
-          <td class="mono" style="color:{% if txn.fee > 0 %}var(--amber){% else %}var(--ink30){% endif %}">{{ txn.fee|floatformat:2 }}</td>
-          <td>
-            {% if txn.status == 'completed' %}<span class="badge bg-green">Done</span>
-            {% elif txn.status == 'pending' %}<span class="badge bg-amber">Pending</span>
-            {% elif txn.status == 'refunded' %}<span class="badge bg-blue">Refunded</span>
-            {% else %}<span class="badge bg-red">Failed</span>{% endif %}
-          </td>
-          <td style="color:var(--ink60);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.78rem">{{ txn.details }}</td>
-          <td class="mono" style="color:var(--ink30);font-size:.73rem;white-space:nowrap">{{ txn.created_at|date:"d M, H:i" }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    {% else %}
-    <div class="empty"><div class="empty-icon">📭</div><p>No transactions yet.<br>Deposit via M-Pesa to get started.</p></div>
-    {% endif %}
+  {% if recent_txns %}
+  <div class="tx-list">
+    {% for txn in recent_txns %}
+    <div class="tx-item">
+      <div class="tx-avatar">
+        {% if 'mpesa' in txn.transaction_type %}📲
+        {% elif txn.transaction_type == 'exchange' %}🔄
+        {% elif txn.transaction_type == 'p2p_send' %}↗️
+        {% elif txn.transaction_type == 'p2p_receive' %}↙️
+        {% else %}💳{% endif %}
+      </div>
+      <div class="tx-info">
+        <div class="tx-name">
+          {% if txn.transaction_type == 'mpesa_deposit' %}M-Pesa Deposit
+          {% elif txn.transaction_type == 'mpesa_withdraw' %}M-Pesa Withdrawal
+          {% elif txn.transaction_type == 'exchange' %}Currency Exchange
+          {% elif txn.transaction_type == 'p2p_send' %}P2P Transfer Sent
+          {% elif txn.transaction_type == 'p2p_receive' %}P2P Transfer Received
+          {% else %}{{ txn.transaction_type|title }}{% endif %}
+        </div>
+        <div class="tx-date">{{ txn.created_at|date:"d M Y, H:i" }} &nbsp;·&nbsp;
+          {% if txn.status == 'completed' %}<span class="badge bg-teal">Done</span>
+          {% elif txn.status == 'pending' %}<span class="badge bg-amber">Pending</span>
+          {% else %}<span class="badge bg-red">{{ txn.status|title }}</span>{% endif %}
+        </div>
+      </div>
+      <div class="tx-amount {% if txn.transaction_type == 'mpesa_deposit' or txn.transaction_type == 'p2p_receive' %}tx-credit{% else %}tx-debit{% endif %}">
+        {% if txn.transaction_type == 'mpesa_deposit' or txn.transaction_type == 'p2p_receive' %}+{% else %}−{% endif %}{{ txn.currency }} {{ txn.amount|floatformat:2 }}
+      </div>
+    </div>
+    {% endfor %}
   </div>
+  {% else %}
+  <div class="card" style="text-align:center;padding:3rem 2rem">
+    <div style="font-size:2.5rem;margin-bottom:1rem">📭</div>
+    <div style="font-weight:700;margin-bottom:.5rem">No transactions yet</div>
+    <p style="color:var(--ink50);font-size:.88rem">Deposit via M-Pesa to get started.</p>
+  </div>
+  {% endif %}
 </div>
 
 <script>
 const balances = { {% for curr, cb in balances.items %}"{{ curr }}": {{ cb.balance }},{% endfor %} };
 const homeCurr = "{{ home_currency }}";
-
 fetch("{% url 'rates_api' %}")
   .then(r => r.json())
   .then(rates => {
-    document.getElementById('rateStatus').textContent = '● Live rates (ECB)';
-    document.getElementById('rateStatus').style.color = '#4ade80';
+    document.getElementById('rateStatus').textContent = '● Live rates';
+    document.getElementById('rateStatus').style.color = 'rgba(255,255,255,.7)';
     let total = 0;
     Object.entries(balances).forEach(([curr, bal]) => {
       const el = document.getElementById('usd_' + curr);
-      if (!el) return;
       if (curr === homeCurr) { total += bal; if (el) el.textContent = ''; return; }
       const rate = parseFloat(rates[curr + '_' + homeCurr]);
-      if (rate) {
-        total += bal * rate;
-        el.textContent = '≈ ' + homeCurr + ' ' + (bal * rate).toFixed(2);
-      }
+      if (rate && el) { total += bal * rate; el.textContent = '≈ ' + homeCurr + ' ' + (bal * rate).toFixed(2); }
     });
     document.getElementById('portfolioVal').textContent = homeCurr + ' ' + total.toFixed(2);
   })

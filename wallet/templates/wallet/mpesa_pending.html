@@ -5,30 +5,30 @@
 
   <div id="pendingView">
     <div class="pulse-wrap"><div class="pulse-dot"></div></div>
-    <h1 style="font-family:'Fraunces',serif;font-size:1.6rem;font-weight:800;letter-spacing:-.03em;margin-bottom:.5rem">Waiting for Payment</h1>
-    <p style="color:var(--ink60);margin-bottom:2rem;font-size:.88rem">Check your phone and enter your M-Pesa PIN<br>to complete the deposit.</p>
+    <h1 style="font-size:1.6rem;font-weight:800;letter-spacing:-.03em;margin-bottom:.5rem">Waiting for Payment</h1>
+    <p style="color:var(--ink50);margin-bottom:2rem;font-size:.88rem">Check your phone and enter your M-Pesa PIN<br>to complete the deposit.</p>
 
     <div class="card" style="text-align:left;margin-bottom:1.5rem">
       <div class="card-title">Transaction Details</div>
       <div style="display:flex;flex-direction:column;gap:0">
-        <div style="display:flex;justify-content:space-between;align-items:center;padding:.6rem 0;border-bottom:1px solid var(--ink10)">
-          <span style="font-size:.78rem;color:var(--ink60);font-weight:500">Phone</span>
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:.6rem 0;border-bottom:1px solid var(--ink-border)">
+          <span style="font-size:.78rem;color:var(--ink50);font-weight:500">Phone</span>
           <span class="mono" style="font-size:.82rem">{{ mpesa_txn.phone }}</span>
         </div>
-        <div style="display:flex;justify-content:space-between;align-items:center;padding:.6rem 0;border-bottom:1px solid var(--ink10)">
-          <span style="font-size:.78rem;color:var(--ink60);font-weight:500">Amount</span>
-          <span class="mono" style="font-size:1rem;font-weight:600;color:var(--green-dk)">KES {{ mpesa_txn.amount }}</span>
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:.6rem 0;border-bottom:1px solid var(--ink-border)">
+          <span style="font-size:.78rem;color:var(--ink50);font-weight:500">Amount</span>
+          <span class="mono" style="font-size:1rem;font-weight:600;color:var(--teal-dk)">KES {{ mpesa_txn.amount }}</span>
         </div>
-        <div style="display:flex;justify-content:space-between;align-items:center;padding:.6rem 0;border-bottom:1px solid var(--ink10)">
-          <span style="font-size:.78rem;color:var(--ink60);font-weight:500">Fee</span>
-          <span class="mono" style="font-size:.82rem;color:var(--green-dk)">FREE 🎉</span>
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:.6rem 0;border-bottom:1px solid var(--ink-border)">
+          <span style="font-size:.78rem;color:var(--ink50);font-weight:500">Fee</span>
+          <span class="mono" style="font-size:.82rem;color:var(--teal-dk)">FREE 🎉</span>
         </div>
-        <div style="display:flex;justify-content:space-between;align-items:center;padding:.6rem 0;border-bottom:1px solid var(--ink10)">
-          <span style="font-size:.78rem;color:var(--ink60);font-weight:500">Status</span>
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:.6rem 0;border-bottom:1px solid var(--ink-border)">
+          <span style="font-size:.78rem;color:var(--ink50);font-weight:500">Status</span>
           <span id="statusLabel"><span class="badge bg-amber">Pending</span></span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;padding:.6rem 0">
-          <span style="font-size:.78rem;color:var(--ink60);font-weight:500">Receipt</span>
+          <span style="font-size:.78rem;color:var(--ink50);font-weight:500">Receipt</span>
           <span class="mono" id="receiptLabel" style="font-size:.75rem;color:var(--ink30)">—</span>
         </div>
       </div>
@@ -40,7 +40,7 @@
       Click below to simulate a successful payment confirmation.
     </div>
     <a href="{% url 'mpesa_mock_complete' checkout_id=mpesa_txn.checkout_request_id %}"
-       class="btn btn-mpesa btn-block" style="margin-bottom:1rem">
+       class="btn btn-primary btn-block" style="margin-bottom:1rem">
       ✅ &nbsp;Simulate Payment Success
     </a>
     {% else %}
@@ -50,18 +50,18 @@
 
   <!-- Success -->
   <div id="successView" style="display:none">
-    <div style="width:70px;height:70px;background:var(--green-lt);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:2rem;margin:0 auto 1.25rem;border:3px solid var(--green-md)">✅</div>
-    <h1 style="font-family:'Fraunces',serif;font-size:1.6rem;font-weight:800;letter-spacing:-.03em;color:var(--green-dk);margin-bottom:.5rem">Payment Received!</h1>
-    <p style="color:var(--ink60);margin-bottom:.5rem;font-size:.88rem">Your KES balance has been updated.</p>
+    <div style="width:70px;height:70px;background:var(--teal-50);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:2rem;margin:0 auto 1.25rem;border:3px solid var(--teal-100)">✅</div>
+    <h1 style="font-size:1.6rem;font-weight:800;letter-spacing:-.03em;color:var(--teal-dk);margin-bottom:.5rem">Payment Received!</h1>
+    <p style="color:var(--ink50);margin-bottom:.5rem;font-size:.88rem">Your KES balance has been updated.</p>
     <p class="mono" style="font-size:.75rem;color:var(--ink30);margin-bottom:2rem" id="receiptDisplay"></p>
     <a href="{% url 'dashboard' %}" class="btn btn-primary">Go to Dashboard →</a>
   </div>
 
   <!-- Failed -->
   <div id="failedView" style="display:none">
-    <div style="width:70px;height:70px;background:var(--coral-lt);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:2rem;margin:0 auto 1.25rem;border:3px solid #fecaca">❌</div>
-    <h1 style="font-family:'Fraunces',serif;font-size:1.6rem;font-weight:800;letter-spacing:-.03em;color:#991b1b;margin-bottom:.5rem">Payment Failed</h1>
-    <p style="color:var(--ink60);margin-bottom:2rem;font-size:.88rem" id="failReason">The M-Pesa payment was not completed.</p>
+    <div style="width:70px;height:70px;background:var(--red-lt);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:2rem;margin:0 auto 1.25rem;border:3px solid #fecaca">❌</div>
+    <h1 style="font-size:1.6rem;font-weight:800;letter-spacing:-.03em;color:#991b1b;margin-bottom:.5rem">Payment Failed</h1>
+    <p style="color:var(--ink50);margin-bottom:2rem;font-size:.88rem" id="failReason">The M-Pesa payment was not completed.</p>
     <a href="{% url 'mpesa_deposit' %}" class="btn btn-primary">Try Again</a>
   </div>
 
@@ -72,32 +72,23 @@
 
 <script>
 {% if "MOCK" not in mpesa_txn.checkout_request_id %}
-const statusUrl = "{% url 'mpesa_status' checkout_id=mpesa_txn.checkout_request_id %}";
-const queryUrl  = "{% url 'stk_query'    checkout_id=mpesa_txn.checkout_request_id %}";
-let attempts = 0, usedQuery = false;
-const MAX = 36;
-
-function showSuccess(receipt) {
-  document.getElementById('pendingView').style.display = 'none';
-  document.getElementById('successView').style.display = 'block';
-  if (receipt) document.getElementById('receiptDisplay').textContent = 'Receipt: ' + receipt;
+const statusUrl="{% url 'mpesa_status' checkout_id=mpesa_txn.checkout_request_id %}";
+const queryUrl="{% url 'stk_query' checkout_id=mpesa_txn.checkout_request_id %}";
+let attempts=0,usedQuery=false;
+const MAX=36;
+function showSuccess(receipt){document.getElementById('pendingView').style.display='none';document.getElementById('successView').style.display='block';if(receipt)document.getElementById('receiptDisplay').textContent='Receipt: '+receipt;}
+function showFailed(reason){document.getElementById('pendingView').style.display='none';document.getElementById('failedView').style.display='block';if(reason)document.getElementById('failReason').textContent=reason;}
+function poll(){
+  const url=(attempts>=12&&!usedQuery)?queryUrl:statusUrl;
+  if(attempts===12){usedQuery=true;document.getElementById('pollMsg').textContent='Checking with M-Pesa directly…';}
+  fetch(url).then(r=>r.json()).then(data=>{
+    if(data.status==='completed') showSuccess(data.receipt);
+    else if(data.status==='failed') showFailed('Payment not completed. Please try again.');
+    else if(data.status==='not_found') showFailed('Transaction not found.');
+    else{attempts++;if(attempts<MAX)setTimeout(poll,5000);else document.getElementById('pollMsg').textContent='Timed out — check your dashboard.';}
+  }).catch(()=>{attempts++;if(attempts<MAX)setTimeout(poll,5000);});
 }
-function showFailed(reason) {
-  document.getElementById('pendingView').style.display = 'none';
-  document.getElementById('failedView').style.display  = 'block';
-  if (reason) document.getElementById('failReason').textContent = reason;
-}
-function poll() {
-  const url = (attempts >= 12 && !usedQuery) ? queryUrl : statusUrl;
-  if (attempts === 12) { usedQuery = true; document.getElementById('pollMsg').textContent = 'Checking with M-Pesa directly…'; }
-  fetch(url).then(r => r.json()).then(data => {
-    if (data.status === 'completed')  showSuccess(data.receipt);
-    else if (data.status === 'failed') showFailed('Payment not completed. Please try again.');
-    else if (data.status === 'not_found') showFailed('Transaction not found.');
-    else { attempts++; if (attempts < MAX) setTimeout(poll, 5000); else document.getElementById('pollMsg').textContent = 'Timed out — check your dashboard.'; }
-  }).catch(() => { attempts++; if (attempts < MAX) setTimeout(poll, 5000); });
-}
-setTimeout(poll, 5000);
+setTimeout(poll,5000);
 {% endif %}
 </script>
 {% endblock %}

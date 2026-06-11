@@ -2,37 +2,31 @@
 {% block title %}Create Payment Link — KWallet{% endblock %}
 {% block content %}
 <div class="page-sm">
-
   <div class="ph">
-    <h1>✨ New Payment Link</h1>
-    <p>Fill in the details below. A QR code and shareable link will be generated for you.</p>
+    <h1>New Payment Link</h1>
+    <p>Fill in the details below — a QR code and shareable link will be generated.</p>
   </div>
-
   <div class="card">
     <form method="post">
       {% csrf_token %}
-
       <div class="fg">
         <label class="fl">{{ form.amount.label }}</label>
         {{ form.amount }}
         <div class="fh">Leave blank and anyone who scans can type their own amount.</div>
         {% if form.amount.errors %}<div class="fe">{{ form.amount.errors|join:", " }}</div>{% endif %}
       </div>
-
       <div class="fg">
         <label class="fl">{{ form.note.label }}</label>
         {{ form.note }}
         <div class="fh">Shown to the payer — helps them know what they're paying for.</div>
         {% if form.note.errors %}<div class="fe">{{ form.note.errors|join:", " }}</div>{% endif %}
       </div>
-
       <div class="fg">
         <label class="fl">{{ form.expires_at.label }}</label>
         {{ form.expires_at }}
         <div class="fh">Leave blank for a permanent link that never expires.</div>
         {% if form.expires_at.errors %}<div class="fe">{{ form.expires_at.errors|join:", " }}</div>{% endif %}
       </div>
-
       <div class="fg" style="display:flex;align-items:center;gap:.75rem;background:var(--ink10);padding:.85rem 1rem;border-radius:var(--r8)">
         {{ form.single_use }}
         <div>
@@ -40,18 +34,12 @@
           <div class="fh" style="margin:0">The QR will stop working after the first payment comes through.</div>
         </div>
       </div>
-
-      {% if form.non_field_errors %}
-      <div class="msg msg-error" style="margin-bottom:1rem">❌ {{ form.non_field_errors|join:", " }}</div>
-      {% endif %}
-
+      {% if form.non_field_errors %}<div class="msg msg-error" style="margin-bottom:1rem">{{ form.non_field_errors|join:", " }}</div>{% endif %}
       <button type="submit" class="btn btn-primary btn-block" style="margin-top:1.25rem">Generate QR Code →</button>
     </form>
   </div>
-
   <div style="text-align:center;margin-top:1rem">
-    <a href="{% url 'qr_payment_list' %}" style="color:var(--ink60);font-size:.82rem">← Back to Payment Links</a>
+    <a href="{% url 'qr_payment_list' %}" style="color:var(--ink50);font-size:.82rem">← Back to Payment Links</a>
   </div>
-
 </div>
 {% endblock %}

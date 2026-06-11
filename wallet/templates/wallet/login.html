@@ -9,7 +9,7 @@
   </div>
 
   {% if messages %}
-  <div class="msgs">{% for m in messages %}<div class="msg msg-{{ m.tags }}"><span class="msg-icon">{% if m.tags == 'success' %}✅{% elif m.tags == 'error' %}❌{% else %}ℹ️{% endif %}</span>{{ m }}</div>{% endfor %}</div>
+  <div class="msgs">{% for m in messages %}<div class="msg msg-{{ m.tags }}">{{ m }}</div>{% endfor %}</div>
   {% endif %}
 
   <div class="card">
@@ -25,7 +25,7 @@
         <input class="fi" type="password" name="pin" placeholder="••••••" maxlength="6" required autocomplete="current-password">
         {% for e in form.pin.errors %}<div class="fe">{{ e }}</div>{% endfor %}
       </div>
-      {% if form.non_field_errors %}<div class="msg msg-error" style="margin-bottom:1rem"><span class="msg-icon">❌</span>{{ form.non_field_errors }}</div>{% endif %}
+      {% if form.non_field_errors %}<div class="msg msg-error" style="margin-bottom:1rem">{{ form.non_field_errors }}</div>{% endif %}
       <button type="submit" class="btn btn-primary btn-block" style="margin-top:.5rem">Sign In →</button>
     </form>
   </div>

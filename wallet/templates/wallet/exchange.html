@@ -2,24 +2,21 @@
 {% block title %}Exchange — KWallet{% endblock %}
 {% block content %}
 <div class="page-sm">
-  {% if messages %}<div class="msgs">{% for m in messages %}<div class="msg msg-{{ m.tags }}"><span class="msg-icon">{% if m.tags == 'success' %}✅{% else %}❌{% endif %}</span>{{ m }}</div>{% endfor %}</div>{% endif %}
+  {% if messages %}<div class="msgs">{% for m in messages %}<div class="msg msg-{{ m.tags }}">{{ m }}</div>{% endfor %}</div>{% endif %}
 
   <div class="ph"><h1>Exchange</h1><p>Swap between your currencies at live market rates.</p></div>
 
   <div class="fee-box">
-    💡 <strong>Exchange fee — tiered by amount</strong><br>
+    💡 <strong>Tiered exchange fee</strong><br>
     <span style="font-size:.82rem;line-height:1.7">
-      Up to $500 equiv: <strong>1.5%</strong> &nbsp;·&nbsp;
-      $500 – $2,000: <strong>1.0%</strong> &nbsp;·&nbsp;
-      $2,000 – $10,000: <strong>0.75%</strong> &nbsp;·&nbsp;
-      Over $10,000: <strong>0.5%</strong>
+      ≤ $500: <strong>1.5%</strong> &nbsp;·&nbsp; $500–$2k: <strong>1.0%</strong> &nbsp;·&nbsp; $2k–$10k: <strong>0.75%</strong> &nbsp;·&nbsp; &gt;$10k: <strong>0.5%</strong>
     </span>
   </div>
 
   <div class="card" style="margin-bottom:1rem">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.1rem">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
       <div class="card-title" style="margin:0">Convert</div>
-      <span id="rateSource" style="font-family:'DM Mono',monospace;font-size:.7rem;color:var(--ink30)">loading…</span>
+      <span id="rateSource" class="mono" style="font-size:.7rem;color:var(--ink30)">loading…</span>
     </div>
     <form method="post" id="exchForm">
       {% csrf_token %}
@@ -42,14 +39,12 @@
         <input class="fi" type="number" name="amount" id="amtInput" step="0.0001" min="0.01" placeholder="0.0000" required oninput="updatePreview()">
         {% for e in form.amount.errors %}<div class="fe">{{ e }}</div>{% endfor %}
       </div>
-
       <div class="prev" id="preview">
         <div class="prev-main" id="prevLine"></div>
         <div class="prev-rate" id="prevRate"></div>
         <div class="prev-fee" id="prevFee"></div>
       </div>
-
-      {% if form.non_field_errors %}<div class="msg msg-error" style="margin-bottom:1rem"><span class="msg-icon">❌</span>{{ form.non_field_errors }}</div>{% endif %}
+      {% if form.non_field_errors %}<div class="msg msg-error" style="margin-bottom:1rem">{{ form.non_field_errors }}</div>{% endif %}
       <button type="submit" class="btn btn-primary btn-block">Exchange Now →</button>
     </form>
   </div>
@@ -57,7 +52,7 @@
   <div class="card">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.85rem">
       <div class="card-title" style="margin:0">Live Rates</div>
-      <span style="font-family:'DM Mono',monospace;font-size:.68rem;color:var(--ink30)" id="ratesTs">—</span>
+      <span class="mono" style="font-size:.68rem;color:var(--ink30)" id="ratesTs">—</span>
     </div>
     <div class="rg" id="ratesGrid">
       {% for key, rate in flat_rates.items %}
@@ -72,89 +67,64 @@
 </div>
 
 <script>
-// Tiered exchange fee brackets — mirrors models.py EXCHANGE_FEE_TIERS
-// Each entry: [usdMin, usdMax (null = unbounded), rate]
-const EXCHANGE_FEE_TIERS = [
-  [0,        500,    0.0150],
-  [500.01,   2000,   0.0100],
-  [2000.01,  10000,  0.0075],
-  [10000.01, null,   0.0050],
-];
-
+const EXCHANGE_FEE_TIERS = [[0,500,.015],[500.01,2000,.01],[2000.01,10000,.0075],[10000.01,null,.005]];
 let liveRates = {};
 
-/**
- * Returns the fee rate (0.015, 0.010, etc.) for a given USD-equivalent amount.
- */
-function getExchangeFeeRate(usdEquiv) {
-  for (const [min, max, rate] of EXCHANGE_FEE_TIERS) {
-    if (max === null ? usdEquiv >= min : usdEquiv >= min && usdEquiv <= max) {
-      return rate;
-    }
-  }
-  return 0.015; // fallback
+function getFeeRate(usd) {
+  for (const [mn,mx,r] of EXCHANGE_FEE_TIERS) { if (mx===null?usd>=mn:usd>=mn&&usd<=mx) return r; }
+  return .015;
 }
-
-/**
- * Returns a human-readable label for the tier, e.g. "1.5% (≤$500)"
- */
-function getExchangeFeeLabel(usdEquiv) {
-  if (usdEquiv <= 500)   return '1.5% (≤ $500 equiv)';
-  if (usdEquiv <= 2000)  return '1.0% ($500 – $2,000 equiv)';
-  if (usdEquiv <= 10000) return '0.75% ($2,000 – $10,000 equiv)';
-  return '0.5% (> $10,000 equiv)';
+function getFeeLabel(usd) {
+  if (usd<=500) return '1.5% (≤$500)';
+  if (usd<=2000) return '1.0% ($500–$2k)';
+  if (usd<=10000) return '0.75% ($2k–$10k)';
+  return '0.5% (>$10k)';
 }
 
 fetch("{% url 'rates_api' %}")
-  .then(r => r.json())
-  .then(data => {
-    liveRates = data;
-    document.getElementById('rateSource').textContent = '● Live (ECB)';
-    document.getElementById('rateSource').style.color = 'var(--green)';
-    const grid = document.getElementById('ratesGrid');
-    grid.innerHTML = '';
-    const active = {{ active_currs|safe }};
-    Object.entries(data).forEach(([key, rate]) => {
-      const [f, t] = key.split('_');
-      if (!active.includes(f) || !active.includes(t)) return;
-      const d = document.createElement('div'); d.className = 'rr';
-      d.innerHTML = `<span class="rr-pair">${f} → ${t}</span><span class="rr-val">${parseFloat(rate).toFixed(4)}</span>`;
+  .then(r=>r.json())
+  .then(data=>{
+    liveRates=data;
+    document.getElementById('rateSource').textContent='● Live (ECB)';
+    document.getElementById('rateSource').style.color='var(--teal)';
+    const grid=document.getElementById('ratesGrid'); grid.innerHTML='';
+    const active={{ active_currs|safe }};
+    Object.entries(data).forEach(([key,rate])=>{
+      const [f,t]=key.split('_');
+      if(!active.includes(f)||!active.includes(t)) return;
+      const d=document.createElement('div'); d.className='rr';
+      d.innerHTML=`<span class="rr-pair">${f} → ${t}</span><span class="rr-val">${parseFloat(rate).toFixed(4)}</span>`;
       grid.appendChild(d);
     });
-    document.getElementById('ratesTs').textContent = 'Updated ' + new Date().toLocaleTimeString('en-KE',{hour:'2-digit',minute:'2-digit'});
+    document.getElementById('ratesTs').textContent='Updated '+new Date().toLocaleTimeString('en',{hour:'2-digit',minute:'2-digit'});
     updatePreview();
   })
-  .catch(() => {
-    document.getElementById('rateSource').textContent = '● Indicative';
-    document.getElementById('rateSource').style.color = 'var(--amber)';
-    {% for key, rate in flat_rates.items %}liveRates["{{ key }}"] = "{{ rate }}";{% endfor %}
+  .catch(()=>{
+    document.getElementById('rateSource').textContent='● Indicative';
+    document.getElementById('rateSource').style.color='var(--amber)';
+    {% for key, rate in flat_rates.items %}liveRates["{{ key }}"]="{{ rate }}";{% endfor %}
     updatePreview();
   });
 
-function updatePreview() {
-  const from = document.getElementById('fromCurr').value;
-  const to   = document.getElementById('toCurr').value;
-  const amt  = parseFloat(document.getElementById('amtInput').value);
-  const box  = document.getElementById('preview');
-  if (!amt || amt <= 0 || from === to) { box.style.display = 'none'; return; }
-
-  const rate = parseFloat(liveRates[from + '_' + to]);
-  if (!rate) { box.style.display = 'none'; return; }
-
-  // Convert source amount to USD-equivalent to pick fee tier
-  const fromToUsd = parseFloat(liveRates[from + '_USD'] || (from === 'USD' ? '1' : '0'));
-  const usdEquiv  = fromToUsd > 0 ? amt * fromToUsd : amt;
-
-  const feeRate   = getExchangeFeeRate(usdEquiv);
-  const feeLabel  = getExchangeFeeLabel(usdEquiv);
-  const converted = (amt * rate).toFixed(4);
-  const fee       = (amt * feeRate).toFixed(4);
-  const total     = (amt + parseFloat(fee)).toFixed(4);
-
-  box.style.display = 'block';
-  document.getElementById('prevLine').textContent = amt + ' ' + from + '  →  ' + converted + ' ' + to;
-  document.getElementById('prevRate').textContent = '1 ' + from + ' = ' + rate.toFixed(6) + ' ' + to;
-  document.getElementById('prevFee').textContent  = 'Fee: ' + fee + ' ' + from + ' (' + feeLabel + ')  |  Total deducted: ' + total + ' ' + from;
+function updatePreview(){
+  const from=document.getElementById('fromCurr').value;
+  const to=document.getElementById('toCurr').value;
+  const amt=parseFloat(document.getElementById('amtInput').value);
+  const box=document.getElementById('preview');
+  if(!amt||amt<=0||from===to){box.style.display='none';return;}
+  const rate=parseFloat(liveRates[from+'_'+to]);
+  if(!rate){box.style.display='none';return;}
+  const fromToUsd=parseFloat(liveRates[from+'_USD']||(from==='USD'?'1':'0'));
+  const usdEquiv=fromToUsd>0?amt*fromToUsd:amt;
+  const feeRate=getFeeRate(usdEquiv);
+  const feeLabel=getFeeLabel(usdEquiv);
+  const converted=(amt*rate).toFixed(4);
+  const fee=(amt*feeRate).toFixed(4);
+  const total=(amt+parseFloat(fee)).toFixed(4);
+  box.style.display='block';
+  document.getElementById('prevLine').textContent=amt+' '+from+'  →  '+converted+' '+to;
+  document.getElementById('prevRate').textContent='1 '+from+' = '+rate.toFixed(6)+' '+to;
+  document.getElementById('prevFee').textContent='Fee: '+fee+' '+from+' ('+feeLabel+')  |  Total deducted: '+total+' '+from;
 }
 </script>
 {% endblock %}
