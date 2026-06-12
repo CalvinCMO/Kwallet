@@ -19,6 +19,7 @@ from .forms import (
     AddCurrencyForm, ExchangeForm, LoginForm,
     MpesaDepositForm, MpesaWithdrawForm,
     P2PTransferForm, RegisterForm,PaymentRequestForm,ExchangeForm,QRPayForm,
+    MAX_CURRENCIES,
 )
 from .models import (
     ALL_CURRENCIES, COUNTRY_HOME_CURRENCY, FEE_SCHEDULE, UNIVERSAL_CURRENCIES,
@@ -150,23 +151,38 @@ def register_view(request):
                 pin_hash=pin_hash, country=country,
             )
 
-            # All 5 EA currencies for every wallet
+            # All EA universal currencies — always created, always protected
             for curr in UNIVERSAL_CURRENCIES:
-                CurrencyBalance.objects.create(wallet=wallet, currency=curr,
-                                               balance=Decimal('0.0000'))
+                CurrencyBalance.objects.get_or_create(
+                    wallet=wallet, currency=curr,
+                    defaults={'balance': Decimal('0.0000')}
+                )
 
-            # 5 user-chosen international currencies
-            chosen = form.get_chosen_currencies()
+            # User-chosen international currencies — skip any duplicates / EA ones
+            chosen   = form.get_chosen_currencies()
+            existing = set(UNIVERSAL_CURRENCIES)
+            added    = 0
             for curr in chosen:
-                if curr not in UNIVERSAL_CURRENCIES:
-                    CurrencyBalance.objects.create(wallet=wallet, currency=curr,
-                                                   balance=Decimal('0.0000'))
+                if curr in existing:
+                    continue                      # already created above
+                if len(existing) >= MAX_CURRENCIES:
+                    break                         # safety cap
+                CurrencyBalance.objects.create(
+                    wallet=wallet, currency=curr, balance=Decimal('0.0000')
+                )
+                existing.add(curr)
+                added += 1
+
+            total_slots = len(existing)
 
             # Create default USD-based transaction limits for the new wallet
             create_default_wallet_limit(wallet)
 
         logger.info(f"Registered: {wallet.wallet_id} | {wallet.phone} | {country}")
-        messages.success(request, f'Wallet created! You have {5 + len(set(chosen) - set(UNIVERSAL_CURRENCIES))} currency balances ready.')
+        messages.success(
+            request,
+            f'Wallet created! You have {total_slots} of {MAX_CURRENCIES} currency slots active.'
+        )
         return redirect('login')
 
     return render(request, 'wallet/register.html', {'form': form})
@@ -245,10 +261,54 @@ def add_currency_view(request):
         )
         messages.success(request, f'{currency} balance added to your wallet.')
         return redirect('dashboard')
-    existing = wallet.get_active_currencies()
+    existing   = wallet.get_active_currencies()
+    home_curr  = wallet.home_currency
+    count      = len(existing)
+    at_limit   = count >= MAX_CURRENCIES
+    removable  = [
+        cb for cb in wallet.currency_balances.all()
+        if cb.currency != home_curr
+    ]
     return render(request, 'wallet/add_currency.html', {
-        'form': form, 'existing': existing
+        'form':       form,
+        'existing':   existing,
+        'home_curr':  home_curr,
+        'count':      count,
+        'at_limit':   at_limit,
+        'max':        MAX_CURRENCIES,
+        'removable':  removable,
     })
+
+
+# ── remove currency ───────────────────────────────────────────────────────────
+
+@wallet_required
+def remove_currency_view(request, currency):
+    wallet = request.wallet
+    home   = wallet.home_currency
+
+    if currency == home:
+        messages.error(request, f'{home} is your home currency and cannot be removed.')
+        return redirect('add_currency')
+
+    try:
+        cb = wallet.currency_balances.get(currency=currency)
+    except CurrencyBalance.DoesNotExist:
+        messages.error(request, f'You do not hold {currency}.')
+        return redirect('add_currency')
+
+    if cb.balance > 0:
+        messages.error(
+            request,
+            f'Cannot remove {currency} — your balance is {cb.balance:.4f}. '
+            f'Exchange or transfer it to zero first.'
+        )
+        return redirect('add_currency')
+
+    if request.method == 'POST':
+        cb.delete()
+        messages.success(request, f'{currency} wallet removed.')
+    return redirect('add_currency')
 
 
 # ── exchange ──────────────────────────────────────────────────────────────────
@@ -942,3 +1002,123 @@ def qr_pay_success(request, token):
         'pr':             pr,
         'recipient_name': recipient_name,
     })
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PIN RESET FEATURE
+# ══════════════════════════════════════════════════════════════════════════════
+
+import random
+import string
+from datetime import timedelta
+from django.utils import timezone
+
+# In-process store: { phone: {'code': str, 'expires': datetime} }
+# For production, use cache (redis/memcached) or a DB model instead.
+_PIN_RESET_STORE: dict = {}
+
+_CODE_TTL_MINUTES = 10
+
+
+def _generate_code() -> str:
+    return ''.join(random.choices(string.digits, k=6))
+
+
+def _send_code_via_mpesa_sms(phone: str, code: str):
+    """
+    Sends the OTP via M-Pesa SMS (or any SMS gateway you wire up).
+    For now, logs it so it's visible in dev. Replace with a real SMS call.
+    """
+    logger.info(f"[PIN RESET] OTP for {phone}: {code}  (expires in {_CODE_TTL_MINUTES} min)")
+    # Real production call would look like:
+    # sms_client.send(to=phone, body=f"Your KWallet PIN reset code: {code}. Expires in {_CODE_TTL_MINUTES} min.")
+
+
+def pin_reset_request_view(request):
+    """Step 1: user enters phone → OTP generated and 'sent'."""
+    from .forms import PinResetRequestForm
+    form = PinResetRequestForm(request.POST or None)
+
+    if request.method == 'POST' and form.is_valid():
+        phone = form.cleaned_data['phone']
+        code  = _generate_code()
+        _PIN_RESET_STORE[phone] = {
+            'code':    code,
+            'expires': timezone.now() + timedelta(minutes=_CODE_TTL_MINUTES),
+        }
+        _send_code_via_mpesa_sms(phone, code)
+        # Store phone in session so the next step knows who we're resetting
+        request.session['pin_reset_phone'] = phone
+        messages.success(request, f'A 6-digit code has been sent to {phone}.')
+        return redirect('pin_reset_verify')
+
+    return render(request, 'wallet/pin_reset_request.html', {'form': form})
+
+
+def pin_reset_verify_view(request):
+    """Step 2: user enters the 6-digit OTP."""
+    from .forms import PinResetVerifyForm
+    phone = request.session.get('pin_reset_phone')
+    if not phone:
+        messages.error(request, 'Session expired. Please start again.')
+        return redirect('pin_reset_request')
+
+    form = PinResetVerifyForm(request.POST or None)
+
+    if request.method == 'POST' and form.is_valid():
+        code    = form.cleaned_data['code'].strip()
+        record  = _PIN_RESET_STORE.get(phone)
+        error   = None
+
+        if not record:
+            error = 'No reset code found. Please request a new one.'
+        elif timezone.now() > record['expires']:
+            _PIN_RESET_STORE.pop(phone, None)
+            error = 'Your code has expired. Please request a new one.'
+        elif code != record['code']:
+            error = 'Incorrect code. Please try again.'
+
+        if error:
+            messages.error(request, error)
+        else:
+            # Mark as verified; let them proceed to set a new PIN
+            request.session['pin_reset_verified'] = True
+            _PIN_RESET_STORE.pop(phone, None)
+            return redirect('pin_reset_set')
+
+    return render(request, 'wallet/pin_reset_verify.html', {'form': form, 'phone': phone})
+
+
+def pin_reset_set_view(request):
+    """Step 3: user creates a new PIN."""
+    from .forms import PinResetSetForm
+    phone    = request.session.get('pin_reset_phone')
+    verified = request.session.get('pin_reset_verified', False)
+
+    if not phone or not verified:
+        messages.error(request, 'Session expired or verification incomplete. Please start again.')
+        return redirect('pin_reset_request')
+
+    form = PinResetSetForm(request.POST or None)
+
+    if request.method == 'POST' and form.is_valid():
+        new_pin  = form.cleaned_data['pin']
+        pin_hash = bcrypt.hashpw(
+            new_pin.encode('utf-8'), bcrypt.gensalt()
+        ).decode('utf-8')
+
+        try:
+            wallet = Wallet.objects.get(phone=phone)
+            wallet.pin_hash = pin_hash
+            wallet.save(update_fields=['pin_hash'])
+            # Clean session
+            request.session.pop('pin_reset_phone', None)
+            request.session.pop('pin_reset_verified', None)
+            logger.info(f"PIN reset successful for wallet {wallet.wallet_id}")
+            messages.success(request, 'PIN updated successfully. Please sign in.')
+            return redirect('login')
+        except Wallet.DoesNotExist:
+            messages.error(request, 'Wallet not found. Please start again.')
+            return redirect('pin_reset_request')
+
+    return render(request, 'wallet/pin_reset_set.html', {'form': form, 'phone': phone})

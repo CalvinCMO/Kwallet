@@ -9,7 +9,8 @@ urlpatterns = [
     path('exchange/',       views.exchange_view,     name='exchange'),
     path('transfer/',       views.p2p_view,          name='p2p'),
     path('transactions/',   views.transactions_view, name='transactions'),
-    path('currencies/add/', views.add_currency_view, name='add_currency'),
+    path('currencies/add/', views.add_currency_view,    name='add_currency'),
+    path('currencies/remove/<str:currency>/', views.remove_currency_view, name='remove_currency'),
     path('api/rates/',      views.rates_api,         name='rates_api'),
     path('health/',         views.health_check,      name='health_check'),
     path('mpesa/deposit/',                   views.mpesa_deposit_view,  name='mpesa_deposit'),
@@ -37,6 +38,13 @@ urlpatterns += [
     path('pay/<str:token>/pending/<str:checkout_id>/',    views.qr_pay_pending, name='qr_pay_pending'),
     path('pay/<str:token>/status/<str:checkout_id>/',     views.qr_pay_status,  name='qr_pay_status'),
     path('pay/<str:token>/success/',                      views.qr_pay_success, name='qr_pay_success'),
+]
+
+# ── PIN Reset ────────────────────────────────────────────────────────────────
+urlpatterns += [
+    path('pin/reset/',         views.pin_reset_request_view, name='pin_reset_request'),
+    path('pin/reset/verify/',  views.pin_reset_verify_view,  name='pin_reset_verify'),
+    path('pin/reset/set/',     views.pin_reset_set_view,     name='pin_reset_set'),
 ]
 
 from django.conf import settings

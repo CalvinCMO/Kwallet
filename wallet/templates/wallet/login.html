@@ -30,6 +30,9 @@
       {% endif %}
       <button type="submit" class="btn btn-primary btn-block" style="border-radius:var(--r-md);padding:.8rem">Sign In</button>
     </form>
+    <div style="text-align:center;margin-top:1rem">
+      <a href="{% url 'pin_reset_request' %}" style="font-size:.85rem;color:var(--text-muted)">Forgot PIN?</a>
+    </div>
   </div>
   <div class="auth-foot">No account yet? <a href="{% url 'register' %}">Create wallet free</a></div>
 </div>

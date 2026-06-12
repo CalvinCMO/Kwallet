@@ -18,42 +18,109 @@
     </div>
     {% endif %}
 
-    {# Active currencies grid #}
-    <div class="section-hd">
-      <span class="section-title">Active Wallets</span>
-    </div>
-    <div style="padding:0 16px 16px; display:flex; flex-wrap:wrap; gap:8px">
-      {% for curr in existing %}
-      <div style="display:flex;align-items:center;gap:6px;background:var(--teal-50);border:1px solid var(--teal-100);border-radius:999px;padding:6px 14px">
-        <span style="font-size:16px">
-          {% if curr == 'KES' %}🇰🇪{% elif curr == 'TZS' %}🇹🇿{% elif curr == 'UGX' %}🇺🇬{% elif curr == 'RWF' %}🇷🇼{% elif curr == 'ETB' %}🇪🇹{% elif curr == 'USD' %}🇺🇸{% elif curr == 'EUR' %}🇪🇺{% elif curr == 'GBP' %}🇬🇧{% elif curr == 'JPY' %}🇯🇵{% elif curr == 'CNY' %}🇨🇳{% elif curr == 'AED' %}🇦🇪{% elif curr == 'INR' %}🇮🇳{% elif curr == 'CAD' %}🇨🇦{% elif curr == 'AUD' %}🇦🇺{% elif curr == 'CHF' %}🇨🇭{% elif curr == 'ZAR' %}🇿🇦{% elif curr == 'NGN' %}🇳🇬{% elif curr == 'GHS' %}🇬🇭{% else %}💱{% endif %}
-        </span>
-        <span style="font-size:13px;font-weight:600;color:var(--teal-dk)">{{ curr }}</span>
+    {# ── Slots meter ── #}
+    <div style="padding:0 16px 16px">
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:14px 16px;display:flex;align-items:center;justify-content:space-between">
+        <div>
+          <div style="font-size:13px;font-weight:700;color:var(--ink)">Currency Slots</div>
+          <div style="font-size:12px;color:var(--ink-3);margin-top:2px">Max {{ max }} currencies per wallet</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:22px;font-weight:800;color:{% if at_limit %}var(--red){% elif count >= 8 %}var(--amber){% else %}var(--teal){% endif %}">{{ count }}<span style="font-size:14px;font-weight:500;color:var(--ink-4)">/{{ max }}</span></div>
+          <div style="font-size:11px;color:var(--ink-4);margin-top:1px">
+            {% if at_limit %}Full — remove one to add{% else %}{{ max|add:"-"|add:count|add:"" }}{% with remaining=max %}{{ remaining }} max — {{ count }} used{% endwith %}{% endif %}
+          </div>
+        </div>
       </div>
-      {% endfor %}
+      {# Slot bar #}
+      <div style="display:flex;gap:3px;margin-top:8px">
+        {% for i in "1234567890" %}
+        {% with slot_num=forloop.counter %}
+        <div style="flex:1;height:5px;border-radius:3px;background:{% if slot_num <= count %}{% if at_limit and slot_num == count %}var(--red){% else %}var(--teal){% endif %}{% else %}var(--border){% endif %}"></div>
+        {% endwith %}
+        {% endfor %}
+      </div>
     </div>
 
-    {# Add new #}
-    <div style="padding:0 16px">
+    {# ── Active currencies ── #}
+    <div class="section-hd">
+      <span class="section-title">Your Wallets</span>
+    </div>
+
+    <div style="padding:0 16px 8px;display:flex;flex-direction:column;gap:2px">
+      {% for cb in removable %}
+      <div style="display:flex;align-items:center;gap:12px;background:var(--surface);border-radius:var(--r-md);padding:12px 14px">
+        <div style="font-size:22px;width:36px;text-align:center">
+          {% with c=cb.currency %}
+          {% if c == 'KES' %}🇰🇪{% elif c == 'TZS' %}🇹🇿{% elif c == 'UGX' %}🇺🇬{% elif c == 'RWF' %}🇷🇼{% elif c == 'ETB' %}🇪🇹{% elif c == 'USD' %}🇺🇸{% elif c == 'EUR' %}🇪🇺{% elif c == 'GBP' %}🇬🇧{% elif c == 'JPY' %}🇯🇵{% elif c == 'CNY' %}🇨🇳{% elif c == 'AED' %}🇦🇪{% elif c == 'INR' %}🇮🇳{% elif c == 'CAD' %}🇨🇦{% elif c == 'AUD' %}🇦🇺{% elif c == 'CHF' %}🇨🇭{% elif c == 'ZAR' %}🇿🇦{% elif c == 'NGN' %}🇳🇬{% elif c == 'GHS' %}🇬🇭{% elif c == 'XOF' %}🌍{% elif c == 'MUR' %}🇲🇺{% else %}💱{% endif %}
+          {% endwith %}
+        </div>
+        <div style="flex:1">
+          <div style="font-size:14px;font-weight:600;color:var(--ink)">{{ cb.currency }}</div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--ink-3)">{{ cb.balance|floatformat:4 }}</div>
+        </div>
+        {% if cb.currency == home_curr %}
+          <span style="background:var(--teal-50);color:var(--teal-dk);border-radius:999px;padding:3px 10px;font-size:11px;font-weight:700">HOME</span>
+        {% elif cb.balance > 0 %}
+          <span style="background:var(--bg);color:var(--ink-4);border-radius:999px;padding:3px 10px;font-size:11px;font-weight:500" title="Zero the balance first to remove">Has funds</span>
+        {% else %}
+          <form method="post" action="{% url 'remove_currency' cb.currency %}"
+                onsubmit="return confirm('Remove {{ cb.currency }} wallet? This cannot be undone.')">
+            {% csrf_token %}
+            <button type="submit"
+              style="width:28px;height:28px;border-radius:50%;background:var(--red-lt);border:1px solid #fecaca;color:var(--red);font-size:15px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1"
+              title="Remove {{ cb.currency }}">×</button>
+          </form>
+        {% endif %}
+      </div>
+      {% endfor %}
+
+      {# Home currency row — always shown, always locked #}
+      <div style="display:flex;align-items:center;gap:12px;background:var(--teal-50);border:1px solid var(--teal-100);border-radius:var(--r-md);padding:12px 14px">
+        <div style="font-size:22px;width:36px;text-align:center">
+          {% with c=home_curr %}
+          {% if c == 'KES' %}🇰🇪{% elif c == 'TZS' %}🇹🇿{% elif c == 'UGX' %}🇺🇬{% elif c == 'RWF' %}🇷🇼{% elif c == 'ETB' %}🇪🇹{% elif c == 'USD' %}🇺🇸{% elif c == 'EUR' %}🇪🇺{% elif c == 'GBP' %}🇬🇧{% else %}💱{% endif %}
+          {% endwith %}
+        </div>
+        <div style="flex:1">
+          <div style="font-size:14px;font-weight:700;color:var(--teal-dk)">{{ home_curr }} <span style="font-size:11px;font-weight:500;opacity:.7">(home currency)</span></div>
+          <div style="font-size:11px;color:var(--teal-dk);opacity:.6;margin-top:1px">Always kept · Cannot be removed</div>
+        </div>
+        <svg viewBox="0 0 24 24" style="width:18px;height:18px;stroke:var(--teal);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+      </div>
+    </div>
+
+    {# ── Add new currency ── #}
+    <div style="padding:8px 16px 0">
+      {% if at_limit %}
+      <div class="msg msg-warning" style="margin-bottom:12px">
+        🚫 <strong>Wallet full ({{ count }}/{{ max }}).</strong> Remove a currency with a zero balance above before adding a new one.
+      </div>
+      {% else %}
       <div class="card">
-        <div class="card-title">Add a Currency</div>
-        <div class="ibox">Add a zero-balance wallet. Fund it by exchanging from an existing balance.</div>
+        <div class="card-title">Add a Currency <span style="font-size:.75rem;font-weight:500;color:var(--ink-4)">({{ max|add:"-" }}{{ count }} slot{{ max|add:"-"|add:count|add:"0"|add:" available" }})</span></div>
+        {% if form.fields.currency.choices %}
         <form method="post">
           {% csrf_token %}
           <div class="fg">
             <label class="fl">Select Currency</label>
             <select class="fs" name="currency">
-              {% for val, label in form.currency.field.choices %}
-              <option value="{{ val }}" {% if val in existing %}disabled style="color:var(--ink-4)"{% endif %}>
-                {{ label }}{% if val in existing %} ✓{% endif %}
-              </option>
+              {% for val, label in form.fields.currency.choices %}
+              <option value="{{ val }}">{{ label }}</option>
               {% endfor %}
             </select>
             {% for e in form.currency.errors %}<div class="fe">{{ e }}</div>{% endfor %}
           </div>
+          <div class="ibox" style="margin-bottom:1rem">Adds a zero-balance wallet. Fund it by exchanging from an existing balance.</div>
           <button type="submit" class="btn btn-primary btn-block" style="border-radius:var(--r-md)">Add Currency</button>
         </form>
+        {% else %}
+        <div style="text-align:center;padding:1rem 0;color:var(--ink-3);font-size:.88rem">
+          You already hold all available currencies.
+        </div>
+        {% endif %}
       </div>
+      {% endif %}
     </div>
 
   </div>
