@@ -87,10 +87,20 @@ AUTH_USER_MODEL = 'wallet.WalletUser'
 LOGIN_URL  = '/login/'
 LOGIN_REDIRECT_URL = '/'
 
-STATIC_URL  = '/static/'
+# ====================== STATIC FILES (Railway Fix) ======================
+STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
-STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
+# Ensure directory exists at startup (prevents warning)
+import os
+if not os.path.exists(STATIC_ROOT):
+    os.makedirs(STATIC_ROOT, exist_ok=True)
+
+STATICFILES_DIRS = [
+    BASE_DIR / 'static',   # Create this folder if you want project-level static files
+]
+
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # ── M-Pesa config ──
