@@ -1,0 +1,252 @@
+{% extends "wallet/base.html" %}
+{% block title %}Withdraw — KWallet{% endblock %}
+{% block nav_history %}{% endblock %}
+{% block content %}
+<div class="app-shell">
+  <div class="app-scroll">
+
+    {# ── Stale rate banner ── #}
+    {% if rates_stale %}
+    <div class="rate-stale-banner">⚠️ Live rates unavailable — using fallback rates.</div>
+    {% endif %}
+
+    <div style="padding:18px 20px 8px;display:flex;justify-content:space-between;align-items:center">
+      <div>
+        <div style="font-size:.72rem;color:var(--ink-3);margin-bottom:2px">Cash out</div>
+        <div style="font-size:1.4rem;font-weight:800;color:var(--ink);letter-spacing:-.02em">Withdraw Funds</div>
+      </div>
+      <a href="{% url 'dashboard' %}" class="back-btn">← Back</a>
+    </div>
+
+    {% if messages %}
+    <div style="padding:0 16px 4px">
+      <div class="msgs">{% for m in messages %}<div class="msg msg-{{ m.tags }}">{{ m }}</div>{% endfor %}</div>
+    </div>
+    {% endif %}
+
+    {# Risk #15: Hard KYC block — entire page locked if not verified #}
+    {% if wallet.kyc_status != 'verified' %}
+    <div style="padding:12px 16px 20px">
+      <div class="kyc-full-block">
+        <div class="kyc-full-block-icon">🔒</div>
+        <div>
+          <strong>Identity verification required</strong>
+          <p>Withdrawals are locked until your KYC is approved. This is required under the Central Bank of Kenya's National Payment System regulations.</p>
+          <a href="{% url 'kyc_start' %}" class="btn btn-gold btn-sm" style="margin-top:12px;display:inline-flex">Complete Verification →</a>
+        </div>
+      </div>
+    </div>
+
+    {% else %}
+
+    {# AML daily limit bar (Risk #16) #}
+    <div style="padding:0 16px 8px">
+      <div class="limit-bar-wrap">
+        <div class="limit-bar-label">
+          <span>Daily withdrawal limit</span>
+          <span>{{ home_currency }} {{ daily_withdrawn|floatformat:0 }} / {{ daily_limit|floatformat:0 }}</span>
+        </div>
+        <div class="limit-bar-track">
+          <div class="limit-bar-fill {% if daily_pct >= 85 %}lb-red{% elif daily_pct >= 50 %}lb-yellow{% else %}lb-green{% endif %}"
+               style="width:{{ daily_pct }}%"></div>
+        </div>
+      </div>
+    </div>
+
+    {# ── Method tabs ── #}
+    <div class="method-tabs-bar">
+      <button class="method-tab active-mpesa" id="tab-mpesa" onclick="switchTab('mpesa',this)">📱 M-Pesa</button>
+      <button class="method-tab" id="tab-airtel" onclick="switchTab('airtel',this)">📶 Airtel Money</button>
+      <button class="method-tab" id="tab-bank"   onclick="switchTab('bank',this)">🏦 Bank Transfer</button>
+    </div>
+
+    {# ══ M-PESA ══ #}
+    <div class="method-pane active" id="pane-mpesa">
+      <div style="padding:8px 16px 32px">
+
+        <div class="info-chip">
+          <div class="info-chip-icon" style="background:var(--teal-50)">🟢</div>
+          <div>
+            <div class="info-chip-title">Safaricom M-Pesa B2C</div>
+            <div class="info-chip-sub">Funds sent directly to your M-Pesa. Auto-refunded if delivery fails within 30 min. Tiered fees (see below).</div>
+          </div>
+        </div>
+
+        <form method="post" action="{% url 'mpesa_withdraw' %}">
+          {% csrf_token %}
+          <div class="fg">
+            <label class="fl">KES Balance: <span class="field-hint" style="font-size:.78rem;color:var(--teal-dk)">{{ kes_balance|floatformat:2 }}</span></label>
+            <label class="fl">Amount (KES)</label>
+            <input class="fi" type="number" name="amount" id="mpesaAmt" step="1" min="50"
+                   placeholder="min KES 50" required oninput="calcFee('mpesa')">
+            {% if mpesa_form.amount.errors %}<div class="fe">{{ mpesa_form.amount.errors|join:", " }}</div>{% endif %}
+          </div>
+          <div class="fee-preview" id="mpesaFeeBox" style="display:none">
+            <div class="fee-row"><span class="fee-label">Amount</span><span class="fee-val" id="mpesaAmount">—</span></div>
+            <div class="fee-row"><span class="fee-label">Withdrawal fee</span><span class="fee-val" id="mpesaFee">—</span></div>
+            <div class="fee-divider"></div>
+            <div class="fee-row"><span class="fee-total-label">Total deducted from wallet</span><span class="fee-total-val" id="mpesaTotal">—</span></div>
+          </div>
+          <div class="fg">
+            <label class="fl">M-Pesa Phone <span class="field-hint">(default: {{ wallet.phone }})</span></label>
+            <input class="fi" type="tel" name="phone" placeholder="{{ wallet.phone }}">
+            <div class="fh">Leave blank to use your registered number</div>
+          </div>
+          <div class="security-notice">
+            <svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            Callback verified against Safaricom IP allowlist + HMAC secret. Idempotency key prevents double-credit (Risk #02 & #05).
+          </div>
+          <button type="submit" class="btn btn-primary btn-block">Withdraw via M-Pesa →</button>
+        </form>
+      </div>
+    </div>
+
+    {# ══ AIRTEL MONEY KE ══ #}
+    <div class="method-pane" id="pane-airtel">
+      <div style="padding:8px 16px 32px">
+
+        <div class="info-chip">
+          <div class="info-chip-icon" style="background:var(--airtel-lt)">🔴</div>
+          <div>
+            <div class="info-chip-title">Airtel Money Kenya — Disbursement API</div>
+            <div class="info-chip-sub">Supported prefixes: 073x, 075x, 078x. Settlement 0–5 min. Tiered fees. Auto-refunded if disbursement fails.</div>
+          </div>
+        </div>
+
+        <form method="post" action="{% url 'airtel_withdraw' %}">
+          {% csrf_token %}
+          <div class="fg">
+            <label class="fl">KES Balance: <span class="field-hint" style="font-size:.78rem;color:var(--teal-dk)">{{ kes_balance|floatformat:2 }}</span></label>
+            <label class="fl">Amount (KES)</label>
+            <input class="fi fi-airtel" type="number" name="amount" id="airtelAmt" step="1" min="50"
+                   placeholder="min KES 50" required oninput="calcFee('airtel')">
+          </div>
+          <div class="fee-preview" id="airtelFeeBox" style="display:none">
+            <div class="fee-row"><span class="fee-label">Amount</span><span class="fee-val" id="airtelAmount">—</span></div>
+            <div class="fee-row"><span class="fee-label">Withdrawal fee</span><span class="fee-val" id="airtelFee">—</span></div>
+            <div class="fee-divider"></div>
+            <div class="fee-row"><span class="fee-total-label">Total deducted from wallet</span><span class="fee-total-val" id="airtelTotal">—</span></div>
+          </div>
+          <div class="fg">
+            <label class="fl">Airtel Phone Number</label>
+            <input class="fi fi-airtel" type="tel" name="phone" placeholder="073X / 075X / 078X" required>
+            <div class="fh">Must be an active Airtel Money KE line</div>
+          </div>
+          <div class="security-notice">
+            <svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            Airtel callback verified with shared-secret header + IP allowlist. Same idempotency guard as M-Pesa (Risk #02 & #05).
+          </div>
+          <button type="submit" class="btn btn-airtel btn-block">Withdraw via Airtel Money →</button>
+        </form>
+      </div>
+    </div>
+
+    {# ══ BANK TRANSFER ══ #}
+    <div class="method-pane" id="pane-bank">
+      <div style="padding:8px 16px 32px">
+
+        <div class="info-chip">
+          <div class="info-chip-icon" style="background:var(--bank-lt)">🏦</div>
+          <div>
+            <div class="info-chip-title">Bank Transfer — PesaLink / RTGS</div>
+            <div class="info-chip-sub">All CBK-licensed banks. Flat KES 50 fee. Same-day before 2 PM; next business day otherwise.</div>
+          </div>
+        </div>
+
+        <form method="post" action="{% url 'bank_withdraw' %}">
+          {% csrf_token %}
+          <div class="fg">
+            <label class="fl">Select Bank</label>
+            <div class="bank-chips" id="bankChips">
+              {% for code, label in bank_choices %}
+              <button type="button" class="bank-chip" onclick="selectBank(this,'{{ code }}')">{{ label }}</button>
+              {% endfor %}
+            </div>
+            <input type="hidden" name="bank_name" id="bankNameInput" required>
+            <div class="fe" id="bankNameErr" style="display:none">Please select a bank</div>
+          </div>
+          <div class="fg">
+            <label class="fl">Account Number</label>
+            <input class="fi fi-bank" type="text" name="account_number" placeholder="e.g. 1234567890" required>
+          </div>
+          <div class="fg">
+            <label class="fl">Account Name <span class="field-hint">(as registered with bank)</span></label>
+            <input class="fi fi-bank" type="text" name="account_name" placeholder="e.g. Jane Wanjiru" required>
+          </div>
+          <div class="fg">
+            <label class="fl">KES Balance: <span class="field-hint" style="font-size:.78rem;color:var(--teal-dk)">{{ kes_balance|floatformat:2 }}</span></label>
+            <label class="fl">Amount (KES)</label>
+            <input class="fi fi-bank" type="number" name="amount" id="bankAmt" step="1" min="500"
+                   placeholder="min KES 500" required oninput="calcFee('bank')">
+          </div>
+          <div class="fee-preview" id="bankFeeBox" style="display:none">
+            <div class="fee-row"><span class="fee-label">Amount</span><span class="fee-val" id="bankAmount">—</span></div>
+            <div class="fee-row"><span class="fee-label">PesaLink fee (flat)</span><span class="fee-val">KES 50.00</span></div>
+            <div class="fee-divider"></div>
+            <div class="fee-row"><span class="fee-total-label">Total deducted from wallet</span><span class="fee-total-val" id="bankTotal">—</span></div>
+          </div>
+          <div class="security-notice">
+            <svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            Transfers above KES 100,000 require enhanced verification per CBK Proceeds of Crime Act (Risk #16 — AML structuring detection).
+          </div>
+          <button type="submit" class="btn btn-bank btn-block" onclick="return validateBank()">Send to Bank →</button>
+        </form>
+      </div>
+    </div>
+
+    {% endif %}{# kyc_status verified #}
+
+  </div>
+</div>
+
+<script>
+function switchTab(tab, el) {
+  document.querySelectorAll('.method-pane').forEach(p => p.classList.remove('active'));
+  document.getElementById('pane-' + tab).classList.add('active');
+  document.querySelectorAll('.method-tab').forEach(t => t.className = 'method-tab');
+  el.classList.add('active-' + tab);
+}
+
+// Tiered withdrawal fees matching models.py WITHDRAW_BRACKETS
+const BRACKETS = [
+  [50,100,11],[101,500,29],[501,1000,29],[1001,1500,29],
+  [1501,2500,29],[2501,3500,52],[3501,5000,69],[5001,7500,87],
+  [7501,10000,115],[10001,15000,167],[15001,20000,185],
+  [20001,35000,197],[35001,50000,278],[50001,250000,309]
+];
+function getTieredFee(amt) {
+  for (const [mn,mx,fee] of BRACKETS) { if (amt >= mn && amt <= mx) return fee; }
+  return 309;
+}
+
+function calcFee(method) {
+  const input = document.getElementById(method === 'bank' ? 'bankAmt' : method + 'Amt');
+  const amt = parseFloat(input.value);
+  const box = document.getElementById(method + 'FeeBox');
+  if (!amt || amt < 1) { box.style.display = 'none'; return; }
+  box.style.display = 'block';
+  if (method === 'mpesa' || method === 'airtel') {
+    const fee = getTieredFee(amt);
+    document.getElementById(method + 'Amount').textContent = 'KES ' + amt.toFixed(2);
+    document.getElementById(method + 'Fee').textContent    = 'KES ' + fee.toFixed(2);
+    document.getElementById(method + 'Total').textContent  = 'KES ' + (amt + fee).toFixed(2);
+  } else {
+    document.getElementById('bankAmount').textContent = 'KES ' + amt.toFixed(2);
+    document.getElementById('bankTotal').textContent  = 'KES ' + (amt + 50).toFixed(2);
+  }
+}
+
+function selectBank(el, code) {
+  document.querySelectorAll('.bank-chip').forEach(c => c.classList.remove('selected'));
+  el.classList.add('selected');
+  document.getElementById('bankNameInput').value = code;
+  document.getElementById('bankNameErr').style.display = 'none';
+}
+function validateBank() {
+  if (!document.getElementById('bankNameInput').value) {
+    document.getElementById('bankNameErr').style.display = 'block'; return false;
+  }
+  return true;
+}
+</script>
+{% endblock %}

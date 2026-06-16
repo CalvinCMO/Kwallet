@@ -2,107 +2,189 @@
 {% block title %}Home — KWallet{% endblock %}
 {% block nav_home %}active{% endblock %}
 {% block content %}
-
-{# Mobile-app shell #}
 <div class="app-shell">
   <div class="app-scroll">
 
+    {# ── KYC Banner (Risk #15) ── #}
+    {% if wallet.kyc_status == 'pending' %}
+    <div class="kyc-banner">
+      <span class="kyc-banner-icon">⚠️</span>
+      <div class="kyc-banner-text">
+        <strong>Verify your identity to unlock withdrawals</strong>
+        <span>Deposits only until KYC is approved — CBK requirement</span>
+      </div>
+      <a href="{% url 'kyc_start' %}" class="kyc-banner-btn">Verify →</a>
+    </div>
+    {% endif %}
+
+    {# ── Stale rate banner (Risk #01) ── #}
+    {% if rates_stale %}
+    <div class="rate-stale-banner">
+      ⚠️ Live rates unavailable — using fallback rates. Exchanges above KES 5,000 are paused.
+    </div>
+    {% endif %}
+
     {% if messages %}
-    <div style="padding: 12px 16px 0">
+    <div style="padding:10px 16px 0">
       <div class="msgs">{% for m in messages %}<div class="msg msg-{{ m.tags }}">{{ m }}</div>{% endfor %}</div>
     </div>
     {% endif %}
 
     {# ── Header ── #}
-    <div class="home-header">
-      <div>
-        <div class="home-greeting">Good morning,</div>
-        <div class="home-name">{{ wallet.user.first_name|default:wallet.user.get_full_name }}</div>
+    <div class="home-header" style="padding:20px 20px 4px">
+      <div class="hh-top">
+        <div>
+          <div class="home-greeting">Good day,</div>
+          <div class="home-name">{{ wallet.user.get_full_name|default:wallet.user.username }}</div>
+        </div>
+        <div class="dash-avatar">{{ wallet.user.first_name|slice:":1" }}{{ wallet.user.last_name|slice:":1" }}</div>
       </div>
-      <button class="currency-toggle" onclick="window.location='{% url 'add_currency' %}'">Currency balance</button>
     </div>
 
     {# ── Portfolio Card ── #}
     <div class="portfolio-card">
-      <div class="pc-label">Portfolio value</div>
-      <div class="pc-value" id="portfolioVal">{{ home_currency }} {{ total_value }}</div>
+      <div class="pc-label">Portfolio Value</div>
+      <div class="pc-value" id="portfolioVal">{{ home_currency }} —</div>
       <div class="pc-card-no">**** **** **** {{ wallet.phone|slice:"-4:" }}</div>
       <div class="pc-rate">
-        <span class="pc-rate-dot"></span>
-        <span id="rateStatus">CB live rates</span>
+        <span class="pc-rate-dot {% if rates_stale %}stale{% endif %}"></span>
+        {% if rates_stale %}Fallback rates{% else %}CB live rates{% endif %}
+      </div>
+    </div>
+
+    {# ── AML Daily Limit Bar (Risk #16) ── #}
+    <div style="padding:14px 20px 0">
+      <div class="limit-bar-wrap">
+        <div class="limit-bar-label">
+          <span>Daily withdrawal used</span>
+          <span>{{ home_currency }} {{ daily_withdrawn|floatformat:0 }} / {{ daily_limit|floatformat:0 }}</span>
+        </div>
+        <div class="limit-bar-track">
+          <div class="limit-bar-fill {% if daily_pct >= 85 %}lb-red{% elif daily_pct >= 50 %}lb-yellow{% else %}lb-green{% endif %}"
+               style="width:{{ daily_pct }}%"></div>
+        </div>
       </div>
     </div>
 
     {# ── Quick Actions ── #}
     <div class="actions-row">
+
       <a class="action-item" href="{% url 'p2p' %}">
         <div class="action-circle">
-          {# Send: arrow up-right #}
           <svg viewBox="0 0 24 24"><line x1="7" y1="17" x2="17" y2="7"/><polyline points="7 7 17 7 17 17"/></svg>
         </div>
         <span class="action-label">Send</span>
       </a>
-      <a class="action-item" href="{% url 'qr_payment_create' %}">
-        <div class="action-circle">
-          {# Receive: arrow down-left #}
-          <svg viewBox="0 0 24 24"><line x1="17" y1="7" x2="7" y2="17"/><polyline points="17 17 7 17 7 7"/></svg>
+
+      {# WITHDRAW replaces Receive (Risk #15: locked when KYC pending) #}
+      {% if wallet.kyc_status == 'verified' %}
+      <a class="action-item" href="{% url 'withdraw' %}">
+        <div class="action-circle ac-withdraw">
+          <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="15"/><polyline points="8 11 12 15 16 11"/><path d="M5 19h14"/></svg>
         </div>
-        <span class="action-label">Receive</span>
+        <span class="action-label">Withdraw</span>
       </a>
+      {% else %}
+      <div class="action-item disabled" title="Complete KYC to withdraw">
+        <div class="action-circle ac-withdraw">
+          <svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        </div>
+        <span class="action-label">Withdraw</span>
+      </div>
+      {% endif %}
+
       <a class="action-item" href="{% url 'mpesa_deposit' %}">
         <div class="action-circle">
-          {# Top Up: plus #}
-          <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          <svg viewBox="0 0 24 24"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
         </div>
         <span class="action-label">Top Up</span>
       </a>
+
+      <a class="action-item" href="{% url 'exchange' %}">
+        <div class="action-circle">
+          <svg viewBox="0 0 24 24"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+        </div>
+        <span class="action-label">Exchange</span>
+      </a>
+
       <a class="action-item" href="{% url 'qr_payment_list' %}">
         <div class="action-circle">
-          {# QR: hash / grid #}
-          <svg viewBox="0 0 24 24"><line x1="4" y1="9" x2="20" y2="9"/><line x1="4" y1="15" x2="20" y2="15"/><line x1="10" y1="3" x2="8" y2="21"/><line x1="16" y1="3" x2="14" y2="21"/></svg>
+          <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="3" height="3" rx=".5"/></svg>
         </div>
-        <span class="action-label">QR</span>
+        <span class="action-label">QR Pay</span>
       </a>
+
+    </div>
+
+    {# ── Balances ── #}
+    <div class="section-hd">
+      <span class="section-title">Balances</span>
+      <a class="section-link" href="{% url 'add_currency' %}">+ Add currency</a>
+    </div>
+    <div style="padding:0 16px 8px">
+      <div class="bal-grid">
+        {% for cb in balances %}
+        <div class="bal-card {% if cb.currency == home_currency %}bal-home{% endif %}">
+          <div class="bal-flag">
+            {% if cb.currency == 'KES' %}🇰🇪{% elif cb.currency == 'TZS' %}🇹🇿{% elif cb.currency == 'UGX' %}🇺🇬{% elif cb.currency == 'RWF' %}🇷🇼{% elif cb.currency == 'ETB' %}🇪🇹{% elif cb.currency == 'USD' %}🇺🇸{% elif cb.currency == 'EUR' %}🇪🇺{% elif cb.currency == 'GBP' %}🇬🇧{% elif cb.currency == 'JPY' %}🇯🇵{% elif cb.currency == 'CNY' %}🇨🇳{% elif cb.currency == 'AED' %}🇦🇪{% elif cb.currency == 'INR' %}🇮🇳{% elif cb.currency == 'CAD' %}🇨🇦{% elif cb.currency == 'AUD' %}🇦🇺{% elif cb.currency == 'CHF' %}🇨🇭{% elif cb.currency == 'ZAR' %}🇿🇦{% elif cb.currency == 'NGN' %}🇳🇬{% elif cb.currency == 'GHS' %}🇬🇭{% else %}💱{% endif %}
+          </div>
+          <div class="bal-code">{{ cb.currency }}</div>
+          <div class="bal-val">{{ cb.balance|floatformat:2 }}</div>
+          <div class="bal-usd" id="usd_{{ cb.currency }}">—</div>
+        </div>
+        {% endfor %}
+      </div>
     </div>
 
     {# ── Recent Transactions ── #}
-    <div class="section-hd">
-      <span class="section-title">Recent Transactions</span>
+    <div class="section-hd" style="padding-top:12px">
+      <span class="section-title">Recent Activity</span>
       <a class="section-link" href="{% url 'transactions' %}">See all</a>
     </div>
 
     {% if recent_txns %}
-    <div class="tx-list">
+    <div class="tx-list" style="padding-bottom:8px">
       {% for txn in recent_txns %}
       <div class="tx-row">
-        <div class="tx-avatar">
-          {% if txn.transaction_type == 'mpesa_deposit' %}
-            <svg viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
-          {% elif txn.transaction_type == 'mpesa_withdraw' %}
-            <svg viewBox="0 0 24 24"><polyline points="23 18 13.5 8.5 8.5 13.5 1 6"/><polyline points="17 18 23 18 23 12"/></svg>
+        <div class="tx-avatar
+          {% if txn.transaction_type in 'mpesa_deposit,airtel_deposit,bank_deposit,p2p_receive' %}tx-av-credit
+          {% elif txn.transaction_type == 'exchange' %}tx-av-exchange
+          {% elif txn.transaction_type == 'p2p_send' %}tx-av-p2p
+          {% elif txn.transaction_type in 'airtel_withdraw' %}tx-av-airtel
+          {% elif txn.transaction_type == 'bank_withdraw' %}tx-av-bank
+          {% else %}tx-av-debit{% endif %}">
+          {% if 'deposit' in txn.transaction_type %}
+            <svg viewBox="0 0 24 24" style="stroke:var(--teal-dk)"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+          {% elif 'withdraw' in txn.transaction_type %}
+            <svg viewBox="0 0 24 24" style="stroke:#BE185D"><line x1="12" y1="5" x2="12" y2="15"/><polyline points="8 11 12 15 16 11"/><path d="M5 19h14"/></svg>
           {% elif txn.transaction_type == 'exchange' %}
-            <svg viewBox="0 0 24 24"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+            <svg viewBox="0 0 24 24" style="stroke:var(--blue)"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
           {% elif txn.transaction_type == 'p2p_send' %}
-            <svg viewBox="0 0 24 24"><line x1="7" y1="17" x2="17" y2="7"/><polyline points="7 7 17 7 17 17"/></svg>
-          {% elif txn.transaction_type == 'p2p_receive' %}
-            <svg viewBox="0 0 24 24"><line x1="17" y1="7" x2="7" y2="17"/><polyline points="17 17 7 17 7 7"/></svg>
+            <svg viewBox="0 0 24 24" style="stroke:#7C3AED"><line x1="7" y1="17" x2="17" y2="7"/><polyline points="7 7 17 7 17 17"/></svg>
           {% else %}
-            <svg viewBox="0 0 24 24"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+            <svg viewBox="0 0 24 24" style="stroke:var(--teal-dk)"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
           {% endif %}
         </div>
         <div class="tx-body">
+          {# Risk #06: PII masked in transaction labels #}
           <div class="tx-name">
             {% if txn.transaction_type == 'mpesa_deposit' %}M-Pesa Deposit
             {% elif txn.transaction_type == 'mpesa_withdraw' %}M-Pesa Withdrawal
+            {% elif txn.transaction_type == 'airtel_deposit' %}Airtel Money Deposit
+            {% elif txn.transaction_type == 'airtel_withdraw' %}Airtel Money Withdrawal
+            {% elif txn.transaction_type == 'bank_deposit' %}Bank Deposit
+            {% elif txn.transaction_type == 'bank_withdraw' %}Bank Withdrawal
             {% elif txn.transaction_type == 'exchange' %}Currency Exchange
-            {% elif txn.transaction_type == 'p2p_send' %}Transfer Sent
+            {% elif txn.transaction_type == 'p2p_send' %}Transfer · {{ txn.masked_recipient }}
             {% elif txn.transaction_type == 'p2p_receive' %}Transfer Received
-            {% else %}{{ txn.transaction_type|title }}{% endif %}
+            {% else %}{{ txn.get_transaction_type_display }}{% endif %}
           </div>
-          <div class="tx-date">{{ txn.created_at|date:"M j, Y" }}</div>
+          <div class="tx-date">{{ txn.created_at|date:"M j, Y" }} · {{ txn.created_at|time:"H:i" }}
+            <span class="badge {% if txn.status == 'completed' %}bg-green{% elif txn.status == 'pending' %}bg-amber{% elif txn.status == 'failed' %}bg-red{% else %}bg-gray{% endif %}" style="margin-left:4px">{{ txn.status }}</span>
+          </div>
         </div>
-        <div class="tx-amt {% if txn.transaction_type == 'mpesa_deposit' or txn.transaction_type == 'p2p_receive' %}tx-credit{% else %}tx-debit{% endif %}">
-          {% if txn.transaction_type == 'mpesa_deposit' or txn.transaction_type == 'p2p_receive' %}+{% else %}-{% endif %}{{ txn.currency }} {{ txn.amount|floatformat:2 }}
+        <div class="tx-amt {% if txn.transaction_type in 'mpesa_deposit,airtel_deposit,bank_deposit,p2p_receive' %}tx-credit{% else %}tx-debit{% endif %}">
+          {% if txn.transaction_type in 'mpesa_deposit,airtel_deposit,bank_deposit,p2p_receive' %}+{% else %}-{% endif %}{{ txn.currency }} {{ txn.amount|floatformat:2 }}
         </div>
       </div>
       {% endfor %}
@@ -114,45 +196,32 @@
     </div>
     {% endif %}
 
-    {# ── Balances (collapsed below txns) ── #}
-    <div class="section-hd" style="margin-top:8px">
-      <span class="section-title">Your Balances</span>
-      <a class="section-link" href="{% url 'add_currency' %}">+ Add</a>
-    </div>
-    <div style="padding: 0 16px 8px">
-      <div class="bal-grid">
-        {% for curr, cb in balances.items %}
-        <div class="bal-card {% if curr == wallet.home_currency %}bal-home{% endif %}">
-          <div class="bal-flag">
-            {% if curr == 'KES' %}🇰🇪{% elif curr == 'TZS' %}🇹🇿{% elif curr == 'UGX' %}🇺🇬{% elif curr == 'RWF' %}🇷🇼{% elif curr == 'ETB' %}🇪🇹{% elif curr == 'USD' %}🇺🇸{% elif curr == 'EUR' %}🇪🇺{% elif curr == 'GBP' %}🇬🇧{% elif curr == 'JPY' %}🇯🇵{% elif curr == 'CNY' %}🇨🇳{% elif curr == 'AED' %}🇦🇪{% elif curr == 'INR' %}🇮🇳{% elif curr == 'CAD' %}🇨🇦{% elif curr == 'AUD' %}🇦🇺{% elif curr == 'CHF' %}🇨🇭{% elif curr == 'ZAR' %}🇿🇦{% elif curr == 'NGN' %}🇳🇬{% elif curr == 'GHS' %}🇬🇭{% else %}💱{% endif %}
-          </div>
-          <div class="bal-code">{{ curr }}</div>
-          <div class="bal-val">{{ cb.balance|floatformat:2 }}</div>
-          <div class="bal-usd" id="usd_{{ curr }}">—</div>
-        </div>
-        {% endfor %}
-      </div>
-    </div>
-
-  </div>{# /app-scroll #}
-</div>{# /app-shell #}
+  </div>
+</div>
 
 <script>
-const balances = { {% for curr, cb in balances.items %}"{{ curr }}": {{ cb.balance }},{% endfor %} };
+const balancesData = {
+  {% for cb in balances %}"{{ cb.currency }}": "{{ cb.balance }}",{% endfor %}
+};
 const homeCurr = "{{ home_currency }}";
 fetch("{% url 'rates_api' %}")
   .then(r => r.json())
   .then(rates => {
-    document.getElementById('rateStatus').textContent = '● CB live rates';
     let total = 0;
-    Object.entries(balances).forEach(([curr, bal]) => {
-      const el = document.getElementById('usd_' + curr);
-      if (curr === homeCurr) { total += bal; if (el) el.textContent = ''; return; }
+    Object.entries(balancesData).forEach(([curr, balStr]) => {
+      const bal = parseFloat(balStr);
+      const el  = document.getElementById('usd_' + curr);
+      if (curr === homeCurr) { total += bal; if (el) el.textContent = 'Home currency'; return; }
       const rate = parseFloat(rates[curr + '_' + homeCurr]);
-      if (rate && el) { total += bal * rate; el.textContent = '≈ ' + homeCurr + ' ' + (bal * rate).toFixed(2); }
+      if (!isNaN(rate) && el) {
+        const equiv = bal * rate;
+        total += equiv;
+        el.textContent = '≈ ' + homeCurr + ' ' + equiv.toFixed(2);
+      }
     });
-    document.getElementById('portfolioVal').textContent = homeCurr + ' ' + total.toLocaleString('en', {minimumFractionDigits:2, maximumFractionDigits:2});
+    document.getElementById('portfolioVal').textContent =
+      homeCurr + ' ' + total.toLocaleString('en', {minimumFractionDigits:2,maximumFractionDigits:2});
   })
-  .catch(() => {});
+  .catch(() => { document.getElementById('portfolioVal').textContent = '{{ home_currency }} {{ total_value|floatformat:2 }}'; });
 </script>
 {% endblock %}

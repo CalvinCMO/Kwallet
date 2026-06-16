@@ -1,163 +1,137 @@
 """
-rates.py — KWallet v2 Exchange Rate Service
-============================================
-Supports all East African + international currencies.
-Three-layer fallback: cache → frankfurter.app → hardcoded rates.
+rates.py — KWallet
+Risk #01: stale fallback detection + ops alert.
+Risk #13: primary + secondary provider with fallback stored in DB-compatible dict.
 """
-
 import logging
-import requests
-from decimal import Decimal, ROUND_HALF_UP
+import time
 from django.core.cache import cache
 from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
-# All currencies KWallet supports
-CURRENCIES = [
-    'KES', 'TZS', 'UGX', 'RWF', 'ETB',
-    'USD', 'EUR', 'GBP', 'JPY', 'CNY',
-    'AED', 'INR', 'CAD', 'AUD', 'CHF',
-    'ZAR', 'NGN', 'GHS', 'MUR',
-]
+CACHE_KEY = 'kwallet_exchange_rates'
+CACHE_TTL = 300        # 5 minutes
+STALE_AFTER = 600      # 10 minutes — considered stale
+_last_fetch_key = 'kwallet_rates_last_fetch'
 
-# Frankfurter only covers major currencies — EA currencies fetched via USD cross
-FRANKFURTER_CURRENCIES = ['USD', 'EUR', 'GBP', 'JPY', 'CNY', 'AED', 'INR', 'CAD', 'AUD', 'CHF', 'ZAR']
-EA_CURRENCIES = ['KES', 'TZS', 'UGX', 'RWF', 'ETB', 'NGN', 'GHS', 'MUR']
-
-CACHE_KEY   = 'kwallet_v2_exchange_rates'
-CACHE_TTL   = getattr(settings, 'EXCHANGE_RATE_CACHE_TTL', 3600)
-API_TIMEOUT = 8
-API_BASE    = 'https://api.frankfurter.app'
-
-# ── Hardcoded fallback rates (USD base) ──────────────────────────────────────
-# EA currencies are IMF/CBK approximates — update quarterly
+# Risk #13: fallback rates stored centrally (not scattered in code).
+# In production: move to a DB table so ops can update without redeploy.
 USD_FALLBACK = {
-    'EUR': Decimal('0.9200'), 'GBP': Decimal('0.7800'),
-    'JPY': Decimal('149.50'), 'CNY': Decimal('7.2400'),
-    'AED': Decimal('3.6700'), 'INR': Decimal('83.200'),
-    'CAD': Decimal('1.3600'), 'AUD': Decimal('1.5400'),
-    'CHF': Decimal('0.8900'), 'ZAR': Decimal('18.800'),
-    # East African currencies
-    'KES': Decimal('130.00'), 'TZS': Decimal('2650.0'),
-    'UGX': Decimal('3750.0'), 'RWF': Decimal('1320.0'),
-    'ETB': Decimal('57.500'), 'NGN': Decimal('1550.0'),
-    'GHS': Decimal('15.500'), 'MUR': Decimal('44.500'),
+    # East Africa — sourced from CBK/regional central banks
+    'USD_KES': 130.00, 'KES_USD': 1/130.00,
+    'USD_TZS': 2550.0, 'TZS_USD': 1/2550.0,
+    'USD_UGX': 3750.0, 'UGX_USD': 1/3750.0,
+    'USD_RWF': 1300.0, 'RWF_USD': 1/1300.0,
+    'USD_ETB': 56.50,  'ETB_USD': 1/56.50,
+    'USD_NGN': 1550.0, 'NGN_USD': 1/1550.0,
+    'USD_GHS': 12.5,   'GHS_USD': 1/12.5,
+    'USD_ZAR': 18.50,  'ZAR_USD': 1/18.50,
+    # Major
+    'USD_EUR': 0.92,   'EUR_USD': 1/0.92,
+    'USD_GBP': 0.79,   'GBP_USD': 1/0.79,
+    'USD_JPY': 149.0,  'JPY_USD': 1/149.0,
+    'USD_CNY': 7.25,   'CNY_USD': 1/7.25,
+    'USD_AED': 3.67,   'AED_USD': 1/3.67,
+    'USD_INR': 83.0,   'INR_USD': 1/83.0,
+    'USD_CAD': 1.36,   'CAD_USD': 1/1.36,
+    'USD_AUD': 1.55,   'AUD_USD': 1/1.55,
+    'USD_CHF': 0.89,   'CHF_USD': 1/0.89,
 }
 
+PRIMARY_PROVIDERS = [
+    'https://api.frankfurter.app/latest?from=USD',
+    'https://open.er-api.com/v6/latest/USD',   # Risk #13: secondary provider
+]
 
-def _build_full_matrix(usd_rates: dict) -> dict:
-    """
-    Given USD→X rates, builds a complete N×N matrix of all pairs.
-    Uses cross-rate formula: A→B = (USD→B) / (USD→A)
-    """
-    flat = {}
-    all_rates = {**usd_rates, 'USD': Decimal('1.0')}
-    currencies_in_rates = list(all_rates.keys())
 
-    for base in currencies_in_rates:
-        for target in currencies_in_rates:
-            if base == target:
+def _fetch_from_api():
+    """Tries each provider in order, returns USD-based rates dict or None."""
+    import requests
+    for url in PRIMARY_PROVIDERS:
+        try:
+            resp = requests.get(url, timeout=5)
+            resp.raise_for_status()
+            data = resp.json()
+            # Both providers return {'rates': {...}} structure
+            usd_rates = data.get('rates', {})
+            if usd_rates:
+                logger.debug(f'Rates fetched from {url}')
+                return usd_rates
+        except Exception as e:
+            logger.warning(f'Rate provider {url} failed: {e}')
+    return None
+
+
+def _build_cross_rates(usd_rates: dict) -> dict:
+    """Build all cross-pairs from USD base rates."""
+    all_currencies = list(usd_rates.keys()) + ['USD']
+    rates = {}
+    for f in all_currencies:
+        for t in all_currencies:
+            if f == t:
                 continue
-            try:
-                rate = (all_rates[target] / all_rates[base]).quantize(
-                    Decimal('0.000001'), rounding=ROUND_HALF_UP
-                )
-                flat[f"{base}_{target}"] = rate
-            except Exception:
-                pass
-    return flat
-
-
-def _fetch_from_api() -> dict | None:
-    """Fetches live rates from frankfurter.app and builds full cross-rate matrix."""
-    try:
-        targets = ','.join(FRANKFURTER_CURRENCIES)
-        response = requests.get(
-            f"{API_BASE}/latest",
-            params={'from': 'USD', 'to': targets},
-            timeout=API_TIMEOUT,
-        )
-        response.raise_for_status()
-        data = response.json()
-        usd_rates = {k: Decimal(str(v)) for k, v in data.get('rates', {}).items()}
-
-        # Add EA currencies from fallback (updated less frequently)
-        for curr in EA_CURRENCIES:
-            if curr not in usd_rates and curr in USD_FALLBACK:
-                usd_rates[curr] = USD_FALLBACK[curr]
-
-        return _build_full_matrix(usd_rates)
-
-    except requests.exceptions.Timeout:
-        logger.warning("Frankfurter API timeout")
-        return None
-    except requests.RequestException as e:
-        logger.warning(f"Frankfurter API connection error: {e}")
-        return None
-    except Exception as e:
-        logger.warning(f"Rate parse error: {e}")
-        return None
+            f_usd = 1.0 if f == 'USD' else (1.0 / usd_rates[f] if f in usd_rates else None)
+            t_usd = 1.0 if t == 'USD' else usd_rates.get(t)
+            if f_usd and t_usd:
+                rates[f'{f}_{t}'] = round(f_usd * t_usd, 8)
+    return rates
 
 
 def get_rates() -> dict:
-    """Public interface — always returns a usable rates dict."""
+    """
+    Returns exchange rate dict. Falls back to hardcoded rates with an alert.
+    Risk #01: if using fallback, cache is marked stale and ops are notified.
+    """
     cached = cache.get(CACHE_KEY)
     if cached:
-        logger.debug("Exchange rates: cache hit")
         return cached
 
-    logger.info("Exchange rates: fetching from frankfurter.app")
-    live = _fetch_from_api()
+    usd_rates = _fetch_from_api()
 
-    if live:
-        cache.set(CACHE_KEY, live, timeout=CACHE_TTL)
-        logger.info(f"Exchange rates: cached {len(live)} pairs for {CACHE_TTL}s")
-        return live
+    if usd_rates:
+        # Merge with our EA currencies that may not be in the API (Risk #13)
+        for pair, val in USD_FALLBACK.items():
+            parts = pair.split('_')
+            if len(parts) == 2 and parts[0] == 'USD':
+                usd_rates.setdefault(parts[1], val)
+        rates = _build_cross_rates(usd_rates)
+        cache.set(CACHE_KEY, rates, CACHE_TTL)
+        cache.set(_last_fetch_key, time.time(), CACHE_TTL * 2)
+        return rates
+    else:
+        # Risk #01: stale fallback — alert ops
+        logger.error('RATE ALERT: All rate providers failed. Serving fallback rates. Exchanges >KES 5,000 will be blocked.')
+        try:
+            from django.core.mail import mail_admins
+            mail_admins(
+                subject='[KWallet] Exchange rate API unreachable — using fallback',
+                message='Both rate providers are unreachable. Fallback rates are in use. Exchanges above KES 5,000 are blocked.',
+            )
+        except Exception:
+            pass
+        rates = _build_cross_rates({k.replace('USD_', ''): v for k, v in USD_FALLBACK.items() if k.startswith('USD_')})
+        # Short TTL on fallback so we retry sooner
+        cache.set(CACHE_KEY, rates, 60)
+        return rates
 
-    logger.warning("Exchange rates: using hardcoded fallback rates")
-    return _build_full_matrix(USD_FALLBACK)
 
-
-def convert(amount: Decimal, from_curr: str, to_curr: str) -> Decimal:
-    """Convert between any two supported currencies."""
-    if from_curr == to_curr:
-        return amount
+def get_pair_rate(from_curr: str, to_curr: str) -> float:
     rates = get_rates()
-    rate  = rates.get(f"{from_curr}_{to_curr}")
-    if not rate:
-        raise ValueError(f"No rate for {from_curr} → {to_curr}")
-    return (amount * rate).quantize(Decimal('0.0001'), rounding=ROUND_HALF_UP)
+    key   = f'{from_curr}_{to_curr}'
+    if key in rates:
+        return float(rates[key])
+    # Fallback via USD
+    f_usd = rates.get(f'{from_curr}_USD')
+    usd_t = rates.get(f'USD_{to_curr}')
+    if f_usd and usd_t:
+        return float(f_usd) * float(usd_t)
+    raise ValueError(f'No rate for {from_curr}/{to_curr}')
 
 
-def get_rates_for_display() -> dict:
-    """Returns { 'USD': {'EUR': '0.9200', ...}, ... } for templates."""
-    flat = get_rates()
-    nested = {}
-    for key, rate in flat.items():
-        base, target = key.split('_', 1)
-        nested.setdefault(base, {})[target] = f"{rate:.4f}"
-    return nested
-
-
-def get_portfolio_value(balances: dict, target_currency: str = 'USD') -> Decimal:
-    """Converts all balances to a single target currency and sums them."""
-    rates = get_rates()
-    total = Decimal('0')
-    for curr, cb in balances.items():
-        if curr == target_currency:
-            total += cb.balance
-        else:
-            rate = rates.get(f"{curr}_{target_currency}")
-            if rate:
-                total += cb.balance * rate
-    return total.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-
-
-def invalidate_cache():
-    cache.delete(CACHE_KEY)
-    logger.info("Exchange rate cache invalidated")
-
-
-def get_supported_currencies():
-    return CURRENCIES.copy()
+def rates_are_stale() -> bool:
+    """Risk #01: return True when on fallback (no live fetch recently)."""
+    last = cache.get(_last_fetch_key)
+    if not last:
+        return True
+    return (time.time() - last) > STALE_AFTER

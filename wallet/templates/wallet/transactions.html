@@ -1,115 +1,119 @@
 {% extends "wallet/base.html" %}
-{% block title %}History — KWallet{% endblock %}
+{% block title %}Transaction History — KWallet{% endblock %}
 {% block nav_history %}active{% endblock %}
 {% block content %}
-<div class="app-shell">
-  <div class="app-scroll">
+<div class="page">
 
-    <div class="home-header" style="padding-bottom:8px">
-      <div>
-        <div class="home-greeting">All activity</div>
-        <div class="home-name">History</div>
-      </div>
-    </div>
-
-    {% if messages %}
-    <div style="padding:0 16px 8px">
-      <div class="msgs">{% for m in messages %}<div class="msg msg-{{ m.tags }}">{{ m }}</div>{% endfor %}</div>
-    </div>
-    {% endif %}
-
-    {# Filter chips #}
-    <div style="padding:0 16px 12px; display:flex; gap:8px; overflow-x:auto; scrollbar-width:none">
-      <form method="get" id="filterForm" style="display:contents">
-        {% for chip_val, chip_label in filter_chips %}
-        <button type="submit" name="type" value="{{ chip_val }}"
-          style="flex-shrink:0; padding:6px 16px; border-radius:999px; font-size:13px; font-weight:500; font-family:'Inter',sans-serif; cursor:pointer; border:1.5px solid; transition:all .18s;
-          {% if type_filter == chip_val or chip_val == '' and not type_filter %}
-            background:var(--teal); color:#fff; border-color:var(--teal);
-          {% else %}
-            background:var(--surface); color:var(--ink-3); border-color:var(--border);
-          {% endif %}">
-          {{ chip_label }}
-        </button>
-        {% empty %}
-        {% for chip_val, chip_label in ""|make_list %}{% endfor %}
-        {# Fallback static chips #}
-        <button type="submit" name="type" value="" style="flex-shrink:0;padding:6px 16px;border-radius:999px;font-size:13px;font-weight:500;font-family:'Inter',sans-serif;cursor:pointer;border:1.5px solid;{% if not type_filter %}background:var(--teal);color:#fff;border-color:var(--teal);{% else %}background:var(--surface);color:var(--ink-3);border-color:var(--border);{% endif %}">All</button>
-        <button type="submit" name="type" value="mpesa_deposit" style="flex-shrink:0;padding:6px 16px;border-radius:999px;font-size:13px;font-weight:500;font-family:'Inter',sans-serif;cursor:pointer;border:1.5px solid;{% if type_filter == 'mpesa_deposit' %}background:var(--teal);color:#fff;border-color:var(--teal);{% else %}background:var(--surface);color:var(--ink-3);border-color:var(--border);{% endif %}">Deposits</button>
-        <button type="submit" name="type" value="mpesa_withdraw" style="flex-shrink:0;padding:6px 16px;border-radius:999px;font-size:13px;font-weight:500;font-family:'Inter',sans-serif;cursor:pointer;border:1.5px solid;{% if type_filter == 'mpesa_withdraw' %}background:var(--teal);color:#fff;border-color:var(--teal);{% else %}background:var(--surface);color:var(--ink-3);border-color:var(--border);{% endif %}">Withdrawals</button>
-        <button type="submit" name="type" value="exchange" style="flex-shrink:0;padding:6px 16px;border-radius:999px;font-size:13px;font-weight:500;font-family:'Inter',sans-serif;cursor:pointer;border:1.5px solid;{% if type_filter == 'exchange' %}background:var(--teal);color:#fff;border-color:var(--teal);{% else %}background:var(--surface);color:var(--ink-3);border-color:var(--border);{% endif %}">Exchange</button>
-        <button type="submit" name="type" value="p2p_send" style="flex-shrink:0;padding:6px 16px;border-radius:999px;font-size:13px;font-weight:500;font-family:'Inter',sans-serif;cursor:pointer;border:1.5px solid;{% if type_filter == 'p2p_send' %}background:var(--teal);color:#fff;border-color:var(--teal);{% else %}background:var(--surface);color:var(--ink-3);border-color:var(--border);{% endif %}">Transfers</button>
-        {% endfor %}
-      </form>
-    </div>
-
-    {# Currency filter #}
-    <div style="padding:0 16px 12px; display:flex; gap:8px; align-items:center">
-      <form method="get" style="display:flex;gap:8px;align-items:center;width:100%">
-        {% if type_filter %}<input type="hidden" name="type" value="{{ type_filter }}">{% endif %}
-        <select class="fsel" name="currency" onchange="this.form.submit()" style="flex:1">
-          <option value="">All Currencies</option>
-          {% for curr in currencies %}
-          <option value="{{ curr }}" {% if currency_filter == curr %}selected{% endif %}>{{ curr }}</option>
-          {% endfor %}
-        </select>
-        {% if currency_filter or type_filter %}
-        <a href="{% url 'transactions' %}" class="btn btn-ghost btn-sm">✕ Clear</a>
-        {% endif %}
-      </form>
-    </div>
-
-    {% if txns %}
-    <div class="tx-list">
-      {% for txn in txns %}
-      <div class="tx-row">
-        <div class="tx-avatar">
-          {% if txn.transaction_type == 'mpesa_deposit' %}
-            <svg viewBox="0 0 24 24" style="width:20px;height:20px;stroke:var(--teal-dk);fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
-          {% elif txn.transaction_type == 'mpesa_withdraw' %}
-            <svg viewBox="0 0 24 24" style="width:20px;height:20px;stroke:var(--red);fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round"><polyline points="23 18 13.5 8.5 8.5 13.5 1 6"/><polyline points="17 18 23 18 23 12"/></svg>
-          {% elif txn.transaction_type == 'exchange' %}
-            <svg viewBox="0 0 24 24" style="width:20px;height:20px;stroke:var(--teal-dk);fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
-          {% elif txn.transaction_type == 'p2p_send' %}
-            <svg viewBox="0 0 24 24" style="width:20px;height:20px;stroke:var(--red);fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round"><line x1="7" y1="17" x2="17" y2="7"/><polyline points="7 7 17 7 17 17"/></svg>
-          {% elif txn.transaction_type == 'p2p_receive' %}
-            <svg viewBox="0 0 24 24" style="width:20px;height:20px;stroke:var(--teal-dk);fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round"><line x1="17" y1="7" x2="7" y2="17"/><polyline points="17 17 7 17 7 7"/></svg>
-          {% else %}
-            <svg viewBox="0 0 24 24" style="width:20px;height:20px;stroke:var(--teal-dk);fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
-          {% endif %}
-        </div>
-        <div class="tx-body">
-          <div class="tx-name">
-            {% if txn.transaction_type == 'mpesa_deposit' %}M-Pesa Deposit
-            {% elif txn.transaction_type == 'mpesa_withdraw' %}M-Pesa Withdrawal
-            {% elif txn.transaction_type == 'exchange' %}Currency Exchange
-            {% elif txn.transaction_type == 'p2p_send' %}Transfer Sent
-            {% elif txn.transaction_type == 'p2p_receive' %}Transfer Received
-            {% else %}{{ txn.transaction_type|title }}{% endif %}
-          </div>
-          <div class="tx-date">
-            {{ txn.created_at|date:"M j, Y" }}
-            &nbsp;·&nbsp;
-            {% if txn.status == 'completed' %}<span class="badge bg-teal">Done</span>
-            {% elif txn.status == 'pending' %}<span class="badge bg-amber">Pending</span>
-            {% elif txn.status == 'refunded' %}<span class="badge bg-blue">Refunded</span>
-            {% else %}<span class="badge bg-red">Failed</span>{% endif %}
-            {% if txn.fee > 0 %}&nbsp;<span class="badge bg-gray">Fee {{ txn.fee|floatformat:2 }}</span>{% endif %}
-          </div>
-        </div>
-        <div class="tx-amt {% if txn.transaction_type == 'mpesa_deposit' or txn.transaction_type == 'p2p_receive' %}tx-credit{% else %}tx-debit{% endif %}">
-          {% if txn.transaction_type == 'mpesa_deposit' or txn.transaction_type == 'p2p_receive' %}+{% else %}-{% endif %}{{ txn.currency }} {{ txn.amount|floatformat:2 }}
-        </div>
-      </div>
-      {% endfor %}
-    </div>
-    {% else %}
-    <div class="empty">
-      <div class="empty-icon">📭</div>
-      <p>No transactions found{% if type_filter or currency_filter %} — try clearing filters{% endif %}.</p>
-    </div>
-    {% endif %}
-
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem">
+    <h1 style="font-size:1.4rem;font-weight:800;color:var(--ink);letter-spacing:-.03em">History</h1>
+    <a href="{% url 'dashboard' %}" class="back-btn">← Back</a>
   </div>
+
+  {% if messages %}
+  <div class="msgs">{% for m in messages %}<div class="msg msg-{{ m.tags }}">{{ m }}</div>{% endfor %}</div>
+  {% endif %}
+
+  {# Filters #}
+  <form method="get" class="filter-bar" style="margin-bottom:1rem">
+    <select class="fsel" name="type" onchange="this.form.submit()">
+      <option value="">All types</option>
+      <option value="mpesa_deposit"  {% if request.GET.type == 'mpesa_deposit'  %}selected{% endif %}>M-Pesa Deposit</option>
+      <option value="mpesa_withdraw" {% if request.GET.type == 'mpesa_withdraw' %}selected{% endif %}>M-Pesa Withdrawal</option>
+      <option value="airtel_deposit" {% if request.GET.type == 'airtel_deposit' %}selected{% endif %}>Airtel Deposit</option>
+      <option value="airtel_withdraw"{% if request.GET.type == 'airtel_withdraw'%}selected{% endif %}>Airtel Withdrawal</option>
+      <option value="bank_deposit"   {% if request.GET.type == 'bank_deposit'   %}selected{% endif %}>Bank Deposit</option>
+      <option value="bank_withdraw"  {% if request.GET.type == 'bank_withdraw'  %}selected{% endif %}>Bank Withdrawal</option>
+      <option value="exchange"       {% if request.GET.type == 'exchange'       %}selected{% endif %}>Exchange</option>
+      <option value="p2p_send"       {% if request.GET.type == 'p2p_send'       %}selected{% endif %}>Transfer Sent</option>
+      <option value="p2p_receive"    {% if request.GET.type == 'p2p_receive'    %}selected{% endif %}>Transfer Received</option>
+    </select>
+    <select class="fsel" name="status" onchange="this.form.submit()">
+      <option value="">All status</option>
+      <option value="pending"   {% if request.GET.status == 'pending'   %}selected{% endif %}>Pending</option>
+      <option value="completed" {% if request.GET.status == 'completed' %}selected{% endif %}>Completed</option>
+      <option value="failed"    {% if request.GET.status == 'failed'    %}selected{% endif %}>Failed</option>
+      <option value="refunded"  {% if request.GET.status == 'refunded'  %}selected{% endif %}>Refunded</option>
+    </select>
+    <select class="fsel" name="currency" onchange="this.form.submit()">
+      <option value="">All currencies</option>
+      {% for curr in available_currencies %}
+      <option value="{{ curr }}" {% if request.GET.currency == curr %}selected{% endif %}>{{ curr }}</option>
+      {% endfor %}
+    </select>
+  </form>
+
+  {% if transactions %}
+  <div class="tbl-wrap">
+    <table class="tbl">
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Details</th>
+          <th>Amount</th>
+          <th>Fee</th>
+          <th>Status</th>
+          <th>Date</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for txn in transactions %}
+        <tr>
+          <td>
+            <span class="badge
+              {% if 'deposit' in txn.transaction_type %}bg-teal
+              {% elif 'withdraw' in txn.transaction_type %}bg-red
+              {% elif txn.transaction_type == 'exchange' %}bg-blue
+              {% elif txn.transaction_type == 'p2p_send' %}bg-amber
+              {% elif txn.transaction_type == 'p2p_receive' %}bg-green
+              {% else %}bg-gray{% endif %}">
+              {{ txn.get_transaction_type_display }}
+            </span>
+          </td>
+          <td style="font-size:.78rem;color:var(--ink-3)">
+            {# Risk #06: PII masked — no full name/phone in details #}
+            {% if txn.transaction_type == 'p2p_send' %}→ {{ txn.masked_recipient }}
+            {% elif txn.details %}{{ txn.details|truncatechars:40 }}
+            {% else %}—{% endif %}
+          </td>
+          <td class="mono {% if 'deposit' in txn.transaction_type or txn.transaction_type == 'p2p_receive' %}tx-credit{% else %}tx-debit{% endif %}">
+            {{ txn.currency }} {{ txn.amount|floatformat:2 }}
+          </td>
+          <td class="mono" style="font-size:.75rem;color:var(--ink-4)">
+            {% if txn.fee %}{{ txn.currency }} {{ txn.fee|floatformat:2 }}{% else %}—{% endif %}
+          </td>
+          <td>
+            <span class="badge {% if txn.status == 'completed' %}bg-green{% elif txn.status == 'pending' %}bg-amber{% elif txn.status == 'failed' %}bg-red{% else %}bg-gray{% endif %}">
+              {{ txn.status }}
+            </span>
+          </td>
+          <td style="font-size:.75rem;white-space:nowrap;color:var(--ink-3)">
+            {{ txn.created_at|date:"d M Y" }}<br>{{ txn.created_at|time:"H:i" }}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {# Pagination #}
+  {% if transactions.has_other_pages %}
+  <div style="display:flex;justify-content:center;gap:.5rem;padding:1.25rem 0;flex-wrap:wrap">
+    {% if transactions.has_previous %}
+    <a href="?page={{ transactions.previous_page_number }}&type={{ request.GET.type }}&status={{ request.GET.status }}&currency={{ request.GET.currency }}" class="btn btn-ghost btn-sm">← Prev</a>
+    {% endif %}
+    <span style="font-size:.8rem;color:var(--ink-3);align-self:center">Page {{ transactions.number }} of {{ transactions.paginator.num_pages }}</span>
+    {% if transactions.has_next %}
+    <a href="?page={{ transactions.next_page_number }}&type={{ request.GET.type }}&status={{ request.GET.status }}&currency={{ request.GET.currency }}" class="btn btn-ghost btn-sm">Next →</a>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% else %}
+  <div class="empty">
+    <div class="empty-icon">📭</div>
+    <p>No transactions found{% if request.GET.type or request.GET.status or request.GET.currency %} for the selected filters{% endif %}.</p>
+    <a href="{% url 'transactions' %}" class="btn btn-light btn-sm" style="margin-top:.75rem">Clear filters</a>
+  </div>
+  {% endif %}
 </div>
 {% endblock %}

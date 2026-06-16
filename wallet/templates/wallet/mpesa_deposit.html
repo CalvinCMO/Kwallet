@@ -1,64 +1,138 @@
 {% extends "wallet/base.html" %}
-{% block title %}Top Up — KWallet{% endblock %}
+{% block title %}Deposit — KWallet{% endblock %}
 {% block content %}
-<div class="app-shell">
-  <div class="app-scroll">
-    <div class="home-header" style="padding-bottom:8px">
+<div class="page-sm">
+
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.5rem">
+    <div>
+      <div style="font-size:.72rem;color:var(--ink-3);margin-bottom:2px">Fund your wallet</div>
+      <h1 style="font-size:1.5rem;font-weight:800;color:var(--ink);letter-spacing:-.03em">Top Up</h1>
+    </div>
+    <a href="{% url 'dashboard' %}" class="back-btn">← Back</a>
+  </div>
+
+  {% if messages %}
+  <div class="msgs">{% for m in messages %}<div class="msg msg-{{ m.tags }}">{{ m }}</div>{% endfor %}</div>
+  {% endif %}
+
+  {% if mock_mode %}
+  <div class="mock-banner">🧪 <strong>Sandbox mode</strong> — no real money will be moved. STK push is simulated.</div>
+  {% endif %}
+
+  {# ── Method tabs ── #}
+  <div class="method-tabs-bar" style="padding:0 0 12px">
+    <button class="method-tab active-mpesa" id="dt-mpesa" onclick="switchDepTab('mpesa',this)">📱 M-Pesa</button>
+    <button class="method-tab" id="dt-airtel" onclick="switchDepTab('airtel',this)">📶 Airtel Money</button>
+    <button class="method-tab" id="dt-bank" onclick="switchDepTab('bank',this)">🏦 Bank Transfer</button>
+  </div>
+
+  {# ── M-Pesa Deposit ── #}
+  <div class="method-pane active" id="dpane-mpesa">
+    <div class="info-chip">
+      <div class="info-chip-icon" style="background:var(--teal-50)">🟢</div>
       <div>
-        <div class="home-greeting">Fund your wallet</div>
-        <div class="home-name">M-Pesa Deposit</div>
+        <div class="info-chip-title">Safaricom M-Pesa STK Push</div>
+        <div class="info-chip-sub">Enter amount and your phone gets an M-Pesa prompt. Funds credited instantly on approval. Deposits are free.</div>
       </div>
     </div>
+    <form method="post" action="{% url 'mpesa_deposit' %}">
+      {% csrf_token %}
+      <input type="hidden" name="deposit_method" value="mpesa">
+      <div class="fg">
+        <label class="fl">Phone Number</label>
+        <input class="fi" type="tel" name="phone" value="{{ wallet.phone }}" required>
+        <div class="fh">Safaricom line that will receive the STK push</div>
+      </div>
+      <div class="fg">
+        <label class="fl">Amount ({{ home_currency }})</label>
+        <input class="fi" type="number" name="amount" step="1" min="1" placeholder="e.g. 500" required>
+      </div>
+      <div class="ibox">📌 Deposits are <strong>free</strong>. Funds credited immediately after M-Pesa confirmation.</div>
+      <button type="submit" class="btn btn-primary btn-block">Request M-Pesa STK Push →</button>
+    </form>
+  </div>
 
-    {% if messages %}
-    <div style="padding:0 16px 8px">
-      <div class="msgs">{% for m in messages %}<div class="msg msg-{{ m.tags }}">{{ m }}</div>{% endfor %}</div>
+  {# ── Airtel Money Deposit ── #}
+  <div class="method-pane" id="dpane-airtel">
+    <div class="info-chip">
+      <div class="info-chip-icon" style="background:var(--airtel-lt)">🔴</div>
+      <div>
+        <div class="info-chip-title">Airtel Money Kenya</div>
+        <div class="info-chip-sub">Enter your Airtel number and you'll get an Airtel Money prompt. Supported prefixes: 073x, 075x, 078x. Free deposit.</div>
+      </div>
     </div>
-    {% endif %}
+    <form method="post" action="{% url 'airtel_deposit' %}">
+      {% csrf_token %}
+      <div class="fg">
+        <label class="fl">Airtel Phone Number</label>
+        <input class="fi fi-airtel" type="tel" name="phone" placeholder="073X / 075X / 078X" required>
+      </div>
+      <div class="fg">
+        <label class="fl">Amount (KES)</label>
+        <input class="fi fi-airtel" type="number" name="amount" step="1" min="1" placeholder="e.g. 500" required>
+      </div>
+      <div class="ibox">📌 Airtel Money deposits are <strong>free</strong>. Funds credited on successful collection callback.</div>
+      <button type="submit" class="btn btn-airtel btn-block">Request Airtel Money Push →</button>
+    </form>
+  </div>
 
-    <div style="padding:0 16px">
-      {# Hero info #}
-      <div style="display:flex;align-items:center;gap:12px;background:var(--teal-50);border:1px solid var(--teal-100);border-radius:var(--r-lg);padding:16px;margin-bottom:12px">
-        <div style="width:44px;height:44px;background:linear-gradient(135deg,var(--teal),var(--teal-dk));border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:1.3rem;flex-shrink:0">📲</div>
-        <div>
-          <div style="font-weight:700;font-size:.9rem;color:var(--teal-dk)">Lipa Na M-Pesa (STK Push)</div>
-          <div style="font-size:.78rem;color:var(--ink-3);margin-top:2px">You'll get a PIN prompt on your phone. Funds credit to your <strong>KES balance</strong> instantly.</div>
+  {# ── Bank Deposit ── #}
+  <div class="method-pane" id="dpane-bank">
+    <div class="info-chip">
+      <div class="info-chip-icon" style="background:var(--bank-lt)">🏦</div>
+      <div>
+        <div class="info-chip-title">Bank Transfer (PesaLink / RTGS)</div>
+        <div class="info-chip-sub">Transfer from your bank to our collection account. Use your wallet ID as the reference. Free, credits within 2 hours.</div>
+      </div>
+    </div>
+    <div class="card" style="margin-bottom:1rem">
+      <div class="card-title" style="font-size:.78rem">💳 KWallet Collection Account</div>
+      <div style="display:flex;flex-direction:column;gap:.55rem">
+        <div style="display:flex;justify-content:space-between;font-size:.8rem">
+          <span style="color:var(--ink-3)">Bank</span>
+          <span style="font-weight:600">KCB Kenya</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:.8rem">
+          <span style="color:var(--ink-3)">Account Name</span>
+          <span style="font-weight:600">KWallet Ltd</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:.8rem">
+          <span style="color:var(--ink-3)">Account Number</span>
+          <span style="font-weight:600;font-family:'JetBrains Mono',monospace">1234567890</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:.8rem">
+          <span style="color:var(--ink-3)">Reference</span>
+          <span style="font-weight:700;color:var(--teal-dk);font-family:'JetBrains Mono',monospace">{{ wallet.wallet_id }}</span>
         </div>
       </div>
-
-      <div style="background:var(--teal-50);border:1px solid var(--teal-100);border-radius:var(--r-sm);padding:10px 14px;margin-bottom:16px;font-size:.82rem;color:var(--teal-dk);font-weight:500">
-        🎉 Deposit fee: <strong>FREE</strong> — KWallet absorbs the M-Pesa cost on all deposits.
-      </div>
-
-      <div class="card">
-        <form method="post">
-          {% csrf_token %}
-          <div class="fg">
-            <label class="fl">Amount (KES)</label>
-            <input class="fi" type="number" name="amount" step="1" min="10" placeholder="e.g. 500" required id="depAmt" oninput="updatePreview()">
-            {% for e in form.amount.errors %}<div class="fe">{{ e }}</div>{% endfor %}
-            <div class="fh">Minimum KES 10</div>
-          </div>
-          <div id="depPreview" style="display:none" class="prev">
-            <div class="prev-main" id="depMain"></div>
-          </div>
-          <div class="fg" style="margin-bottom:1.5rem">
-            <label class="fl">M-Pesa Phone <span style="text-transform:none;letter-spacing:0;font-weight:400;color:var(--ink-4)">(default: {{ wallet.phone }})</span></label>
-            <input class="fi" type="tel" name="phone" placeholder="{{ wallet.phone }}">
-          </div>
-          <button type="submit" class="btn btn-primary btn-block" style="border-radius:var(--r-md);padding:.8rem">Send STK Push</button>
-        </form>
-      </div>
     </div>
+    <div class="ibox">⚠️ You <strong>must</strong> use your wallet ID <strong>{{ wallet.wallet_id }}</strong> as the payment reference. Deposits without a valid reference cannot be auto-credited and require manual processing.</div>
+    <form method="post" action="{% url 'bank_deposit_notify' %}">
+      {% csrf_token %}
+      <div class="fg">
+        <label class="fl">Amount Transferred (KES)</label>
+        <input class="fi fi-bank" type="number" name="amount" step="1" min="500" placeholder="e.g. 5000" required>
+      </div>
+      <div class="fg">
+        <label class="fl">Your Bank Name</label>
+        <input class="fi fi-bank" type="text" name="bank_name" placeholder="e.g. Equity Bank" required>
+      </div>
+      <div class="fg">
+        <label class="fl">Transaction Reference / Receipt</label>
+        <input class="fi fi-bank" type="text" name="bank_ref" placeholder="e.g. FT2406123456" required>
+      </div>
+      <button type="submit" class="btn btn-bank btn-block">Notify KWallet of Transfer →</button>
+    </form>
   </div>
+
 </div>
+
 <script>
-function updatePreview(){
-  const amt=parseFloat(document.getElementById('depAmt').value);
-  const el=document.getElementById('depPreview');
-  if(!amt||amt<10){el.style.display='none';return;}
-  el.style.display='block';
-  document.getElementById('depMain').textContent=`You pay: KES ${amt.toFixed(0)}  ·  Fee: FREE  ·  Credited: KES ${amt.toFixed(0)}`;
+function switchDepTab(tab, el) {
+  document.querySelectorAll('.method-pane').forEach(p => p.classList.remove('active'));
+  document.getElementById('dpane-' + tab).classList.add('active');
+  document.querySelectorAll('.method-tab').forEach(t => t.className = 'method-tab');
+  el.classList.add('active-' + tab);
 }
 </script>
 {% endblock %}

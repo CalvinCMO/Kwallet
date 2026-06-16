@@ -1,50 +1,37 @@
 {% extends "wallet/base.html" %}
-{% block title %}New Payment Link — KWallet{% endblock %}
-{% block nav_profile %}active{% endblock %}
+{% block title %}Create QR Link — KWallet{% endblock %}
 {% block content %}
-<div class="app-shell">
-  <div class="app-scroll">
-    <div class="home-header" style="padding-bottom:8px">
-      <div>
-        <div class="home-greeting">Generate QR code</div>
-        <div class="home-name">New Payment Link</div>
-      </div>
-    </div>
+<div class="page-sm">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem">
+    <h1 style="font-size:1.4rem;font-weight:800;color:var(--ink);letter-spacing:-.03em">Create QR Link</h1>
+    <a href="{% url 'qr_payment_list' %}" class="back-btn">← Back</a>
+  </div>
 
-    <div style="padding:0 16px">
-      <div class="card">
-        <form method="post">
-          {% csrf_token %}
-          <div class="fg">
-            <label class="fl">{{ form.amount.label }}</label>
-            {{ form.amount }}
-            <div class="fh">Leave blank — payer enters their own amount.</div>
-            {% if form.amount.errors %}<div class="fe">{{ form.amount.errors|join:", " }}</div>{% endif %}
-          </div>
-          <div class="fg">
-            <label class="fl">{{ form.note.label }}</label>
-            {{ form.note }}
-            <div class="fh">Shown to payer — e.g. "Lunch split" or "Invoice #42".</div>
-            {% if form.note.errors %}<div class="fe">{{ form.note.errors|join:", " }}</div>{% endif %}
-          </div>
-          <div class="fg">
-            <label class="fl">{{ form.expires_at.label }}</label>
-            {{ form.expires_at }}
-            <div class="fh">Leave blank for a permanent link.</div>
-            {% if form.expires_at.errors %}<div class="fe">{{ form.expires_at.errors|join:", " }}</div>{% endif %}
-          </div>
-          <div class="fg" style="display:flex;align-items:center;gap:10px;background:var(--bg);padding:.85rem 1rem;border-radius:var(--r-sm)">
-            {{ form.single_use }}
-            <div>
-              <label class="fl" style="margin:0;cursor:pointer" for="{{ form.single_use.id_for_label }}">{{ form.single_use.label }}</label>
-              <div class="fh" style="margin:0">Deactivates after first successful payment.</div>
-            </div>
-          </div>
-          {% if form.non_field_errors %}<div class="msg msg-error" style="margin:.75rem 0">{{ form.non_field_errors|join:", " }}</div>{% endif %}
-          <button type="submit" class="btn btn-primary btn-block" style="margin-top:1.25rem;border-radius:var(--r-md);padding:.8rem">Generate QR Code</button>
-        </form>
+  {% if messages %}
+  <div class="msgs">{% for m in messages %}<div class="msg msg-{{ m.tags }}">{{ m }}</div>{% endfor %}</div>
+  {% endif %}
+
+  <div class="card">
+    <form method="post">
+      {% csrf_token %}
+      <div class="fg">
+        <label class="fl">Amount (KES) <span class="field-hint">— leave blank for open amount</span></label>
+        <input class="fi" type="number" name="amount" step="0.01" min="1" placeholder="Optional fixed amount">
       </div>
-    </div>
+      <div class="fg">
+        <label class="fl">Note / Description</label>
+        <input class="fi" type="text" name="note" maxlength="120" placeholder="e.g. Invoice #4, Lunch split">
+      </div>
+      <div class="fg" style="display:flex;align-items:center;gap:.65rem;margin-bottom:.6rem">
+        <input type="checkbox" name="single_use" id="singleUse" style="accent-color:var(--teal);width:16px;height:16px">
+        <label for="singleUse" style="font-size:.82rem;color:var(--ink-2);cursor:pointer">Single-use (auto-expire after first payment)</label>
+      </div>
+      <div class="fg">
+        <label class="fl">Expires At <span class="field-hint">— leave blank for permanent</span></label>
+        <input class="fi" type="datetime-local" name="expires_at">
+      </div>
+      <button type="submit" class="btn btn-primary btn-block">Generate QR Code →</button>
+    </form>
   </div>
 </div>
 {% endblock %}

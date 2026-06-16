@@ -1,0 +1,68 @@
+{% extends "wallet/base.html" %}
+{% block title %}Verify Identity — KWallet{% endblock %}
+{% block content %}
+<div class="page-auth">
+  <div class="auth-hero">
+    <div class="auth-logo">🪪</div>
+    <h1 class="auth-h1">Verify your identity</h1>
+    <p class="auth-sub">Required by CBK National Payment System regulations</p>
+  </div>
+
+  {% if messages %}
+  <div class="msgs">{% for m in messages %}<div class="msg msg-{{ m.tags }}">{{ m }}</div>{% endfor %}</div>
+  {% endif %}
+
+  {% if wallet.kyc_status == 'verified' %}
+  <div class="msg msg-success">✅ Your identity is verified. All features unlocked.</div>
+  <div style="text-align:center;margin-top:1rem">
+    <a href="{% url 'dashboard' %}" class="btn btn-primary">Go to Dashboard</a>
+  </div>
+  {% elif wallet.kyc_status == 'rejected' %}
+  <div class="msg msg-error">Your previous verification was rejected. Please resubmit with valid documents.</div>
+  {% endif %}
+
+  {% if wallet.kyc_status != 'verified' %}
+  <div class="card" style="margin-bottom:1rem">
+    <div style="display:flex;flex-direction:column;gap:.85rem">
+      <div style="display:flex;gap:.75rem;align-items:flex-start">
+        <div style="width:28px;height:28px;background:var(--teal-50);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.85rem;flex-shrink:0">1</div>
+        <div><div style="font-size:.85rem;font-weight:600;color:var(--ink)">National ID or Passport</div><div style="font-size:.75rem;color:var(--ink-3)">Front and back photo of your government ID</div></div>
+      </div>
+      <div style="display:flex;gap:.75rem;align-items:flex-start">
+        <div style="width:28px;height:28px;background:var(--teal-50);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.85rem;flex-shrink:0">2</div>
+        <div><div style="font-size:.85rem;font-weight:600;color:var(--ink)">Selfie</div><div style="font-size:.75rem;color:var(--ink-3)">Clear photo of your face holding your ID</div></div>
+      </div>
+      <div style="display:flex;gap:.75rem;align-items:flex-start">
+        <div style="width:28px;height:28px;background:var(--teal-50);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.85rem;flex-shrink:0">3</div>
+        <div><div style="font-size:.85rem;font-weight:600;color:var(--ink)">Proof of Address</div><div style="font-size:.75rem;color:var(--ink-3)">Utility bill or bank statement (last 3 months)</div></div>
+      </div>
+    </div>
+  </div>
+
+  <form method="post">
+    {% csrf_token %}
+    <div class="fg">
+      <label class="fl">Full Legal Name <span class="field-hint">(as on ID)</span></label>
+      <input class="fi" type="text" name="full_name"
+             value="{{ wallet.user.get_full_name }}" required>
+    </div>
+    <div class="fg">
+      <label class="fl">National ID / Passport Number</label>
+      <input class="fi" type="text" name="id_number" placeholder="e.g. 12345678" required>
+    </div>
+    <div class="fg">
+      <label class="fl">Date of Birth</label>
+      <input class="fi" type="date" name="dob" required>
+    </div>
+    <div class="ibox" style="margin-bottom:1rem">
+      🔒 Your documents are encrypted and processed by our KYC partner (Smile Identity). Verification usually takes under 5 minutes.
+    </div>
+    <button type="submit" class="btn btn-primary btn-block">Submit for Verification →</button>
+  </form>
+
+  <div class="auth-foot" style="margin-top:.85rem">
+    <a href="{% url 'dashboard' %}">← Skip for now</a> (withdrawals will be unavailable)
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

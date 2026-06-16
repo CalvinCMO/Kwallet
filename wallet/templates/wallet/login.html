@@ -3,37 +3,46 @@
 {% block content %}
 <div class="page-auth">
   <div class="auth-hero">
-    <div class="auth-logo">💳</div>
+    <div class="auth-logo">💚</div>
     <h1 class="auth-h1">Welcome back</h1>
-    <p class="auth-sub">Sign in to your KWallet account</p>
+    <p class="auth-sub">Sign in to your KWallet</p>
   </div>
 
   {% if messages %}
   <div class="msgs">{% for m in messages %}<div class="msg msg-{{ m.tags }}">{{ m }}</div>{% endfor %}</div>
   {% endif %}
 
+  {# Risk #03: show lockout message when brute-force detected #}
+  {% if locked_until %}
+  <div class="msg msg-error" style="margin-bottom:1rem">
+    🔒 Account locked due to too many failed attempts. Try again after <strong>{{ locked_until }}</strong>.
+  </div>
+  {% endif %}
+
   <div class="card">
-    <form method="post">
+    <form method="post" autocomplete="off">
       {% csrf_token %}
       <div class="fg">
         <label class="fl">Phone Number</label>
-        <input class="fi" type="tel" name="phone" placeholder="0712 345 678" required autocomplete="tel">
-        {% for e in form.phone.errors %}<div class="fe">{{ e }}</div>{% endfor %}
+        <input class="fi" type="tel" name="phone" placeholder="07XX XXX XXX" required autofocus
+               autocomplete="username">
       </div>
-      <div class="fg" style="margin-bottom:1.5rem">
+      <div class="fg" style="margin-bottom:.5rem">
         <label class="fl">PIN</label>
-        <input class="fi" type="password" name="pin" placeholder="••••••" maxlength="6" required autocomplete="current-password">
-        {% for e in form.pin.errors %}<div class="fe">{{ e }}</div>{% endfor %}
+        <input class="fi" type="password" name="pin" placeholder="••••••"
+               minlength="6" maxlength="6" required autocomplete="current-password">
+        <div class="fh">6-digit PIN — 5 attempts before 15-min lockout</div>
       </div>
-      {% if form.non_field_errors %}
-      <div class="msg msg-error" style="margin-bottom:1rem">{{ form.non_field_errors }}</div>
+      {% if form.errors or error %}
+      <div class="msg msg-error" style="margin-bottom:.75rem">Incorrect phone or PIN. {{ attempts_remaining }} attempt(s) remaining.</div>
       {% endif %}
-      <button type="submit" class="btn btn-primary btn-block" style="border-radius:var(--r-md);padding:.8rem">Sign In</button>
+      <button type="submit" class="btn btn-primary btn-block">Sign In</button>
     </form>
-    <div style="text-align:center;margin-top:1rem">
-      <a href="{% url 'pin_reset_request' %}" style="font-size:.85rem;color:var(--text-muted)">Forgot PIN?</a>
-    </div>
   </div>
-  <div class="auth-foot">No account yet? <a href="{% url 'register' %}">Create wallet free</a></div>
+
+  <div class="auth-foot">
+    <a href="{% url 'pin_reset_request' %}">Forgot PIN?</a> &nbsp;·&nbsp;
+    Don't have an account? <a href="{% url 'register' %}">Create one</a>
+  </div>
 </div>
 {% endblock %}

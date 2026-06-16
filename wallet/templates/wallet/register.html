@@ -1,11 +1,11 @@
 {% extends "wallet/base.html" %}
-{% block title %}Create Wallet — KWallet{% endblock %}
+{% block title %}Create Account — KWallet{% endblock %}
 {% block content %}
 <div class="page-auth">
   <div class="auth-hero">
     <div class="auth-logo">🌍</div>
-    <h1 class="auth-h1">Create your wallet</h1>
-    <p class="auth-sub">Multi-currency · M-Pesa powered</p>
+    <h1 class="auth-h1">Create account</h1>
+    <p class="auth-sub">Pan-African multi-currency wallet</p>
   </div>
 
   {% if messages %}
@@ -15,69 +15,51 @@
   <div class="card">
     <form method="post">
       {% csrf_token %}
-      <div class="fg">
-        <label class="fl">Full Name</label>
-        <input class="fi" type="text" name="full_name" placeholder="Jane Wanjiku" required>
-        {% for e in form.full_name.errors %}<div class="fe">{{ e }}</div>{% endfor %}
-      </div>
       <div class="fg2">
-        <div class="fg">
-          <label class="fl">Phone</label>
-          <input class="fi" type="tel" name="phone" placeholder="0712 345 678" required>
-          {% for e in form.phone.errors %}<div class="fe">{{ e }}</div>{% endfor %}
+        <div class="fg" style="margin-bottom:0">
+          <label class="fl">First Name</label>
+          <input class="fi" type="text" name="first_name" required placeholder="Jane">
+          {% if form.first_name.errors %}<div class="fe">{{ form.first_name.errors|join:", " }}</div>{% endif %}
         </div>
-        <div class="fg">
-          <label class="fl">Country</label>
-          <select class="fs" name="country">
-            {% for val, label in form.country.field.choices %}<option value="{{ val }}">{{ label }}</option>{% endfor %}
-          </select>
-        </div>
-      </div>
-      <div class="fg2">
-        <div class="fg">
-          <label class="fl">PIN</label>
-          <input class="fi" type="password" name="pin" placeholder="••••" maxlength="6" required>
-          {% for e in form.pin.errors %}<div class="fe">{{ e }}</div>{% endfor %}
-        </div>
-        <div class="fg">
-          <label class="fl">Confirm PIN</label>
-          <input class="fi" type="password" name="pin_confirm" placeholder="••••" maxlength="6" required>
-          {% for e in form.pin_confirm.errors %}<div class="fe">{{ e }}</div>{% endfor %}
+        <div class="fg" style="margin-bottom:0">
+          <label class="fl">Last Name</label>
+          <input class="fi" type="text" name="last_name" required placeholder="Wanjiru">
+          {% if form.last_name.errors %}<div class="fe">{{ form.last_name.errors|join:", " }}</div>{% endif %}
         </div>
       </div>
-      <hr class="div">
-      <div class="curr-section">
-        <div class="curr-section-title">✅ Included — All East African Currencies</div>
-        <div style="display:flex;gap:.5rem;flex-wrap:wrap">
-          <span class="country-badge country-badge-teal">🇰🇪 KES</span>
-          <span class="country-badge country-badge-teal">🇹🇿 TZS</span>
-          <span class="country-badge country-badge-teal">🇺🇬 UGX</span>
-          <span class="country-badge country-badge-teal">🇷🇼 RWF</span>
-          <span class="country-badge country-badge-teal">🇪🇹 ETB</span>
-        </div>
+      <div class="fg" style="margin-top:.85rem">
+        <label class="fl">Phone Number</label>
+        <input class="fi" type="tel" name="phone" required placeholder="07XX XXX XXX">
+        <div class="fh">Safaricom or Airtel Kenya number starting with 07 or 01</div>
+        {% if form.phone.errors %}<div class="fe">{{ form.phone.errors|join:", " }}</div>{% endif %}
       </div>
       <div class="fg">
-        <label class="fl">Add 5 International Currencies</label>
-        <div class="curr-picker">
-          {% for i in "12345" %}
-          <div class="fg">
-            <label class="fl">Pick {{ i }}</label>
-            <select class="fs" name="currency_{{ i }}">
-              {% if i == "1" %}{% for val, label in form.currency_1.field.choices %}<option value="{{ val }}">{{ label }}</option>{% endfor %}
-              {% elif i == "2" %}{% for val, label in form.currency_2.field.choices %}<option value="{{ val }}" {% if val == "EUR" %}selected{% endif %}>{{ label }}</option>{% endfor %}
-              {% elif i == "3" %}{% for val, label in form.currency_3.field.choices %}<option value="{{ val }}" {% if val == "GBP" %}selected{% endif %}>{{ label }}</option>{% endfor %}
-              {% elif i == "4" %}{% for val, label in form.currency_4.field.choices %}<option value="{{ val }}" {% if val == "JPY" %}selected{% endif %}>{{ label }}</option>{% endfor %}
-              {% elif i == "5" %}{% for val, label in form.currency_5.field.choices %}<option value="{{ val }}" {% if val == "CNY" %}selected{% endif %}>{{ label }}</option>{% endfor %}
-              {% endif %}
-            </select>
-          </div>
+        <label class="fl">Country</label>
+        <select class="fs" name="country" required>
+          {% for code, label in countries %}
+          <option value="{{ code }}" {% if code == 'KE' %}selected{% endif %}>{{ label }}</option>
           {% endfor %}
-        </div>
-        {% if form.non_field_errors %}<div class="fe">{{ form.non_field_errors }}</div>{% endif %}
+        </select>
       </div>
-      <button type="submit" class="btn btn-primary btn-block" style="border-radius:var(--r-md);padding:.8rem">Create Wallet</button>
+      <div class="fg">
+        <label class="fl">PIN <span class="field-hint">(6 digits)</span></label>
+        <input class="fi" type="password" name="pin" minlength="6" maxlength="6" required placeholder="••••••">
+        {# Risk #03 & #17: 6-digit minimum enforced #}
+        <div class="fh">Minimum 6 digits. Stored with bcrypt + server-side pepper.</div>
+        {% if form.pin.errors %}<div class="fe">{{ form.pin.errors|join:", " }}</div>{% endif %}
+      </div>
+      <div class="fg" style="margin-bottom:1rem">
+        <label class="fl">Confirm PIN</label>
+        <input class="fi" type="password" name="pin_confirm" minlength="6" maxlength="6" required placeholder="••••••">
+        {% if form.pin_confirm.errors %}<div class="fe">{{ form.pin_confirm.errors|join:", " }}</div>{% endif %}
+      </div>
+      <div class="ibox" style="margin-bottom:1rem">
+        🆔 KYC verification will be required after registration to unlock withdrawals, as required by CBK regulations.
+      </div>
+      <button type="submit" class="btn btn-primary btn-block">Create Account</button>
     </form>
   </div>
-  <div class="auth-foot">Have a wallet? <a href="{% url 'login' %}">Sign in</a></div>
+
+  <div class="auth-foot">Already have an account? <a href="{% url 'login' %}">Sign in</a></div>
 </div>
 {% endblock %}

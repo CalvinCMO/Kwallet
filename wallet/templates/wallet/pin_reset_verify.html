@@ -3,78 +3,26 @@
 {% block content %}
 <div class="page-auth">
   <div class="auth-hero">
-    <div class="auth-logo">📱</div>
-    <h1 class="auth-h1">Enter your code</h1>
-    <p class="auth-sub">We sent a 6-digit code to <strong>{{ phone }}</strong></p>
+    <div class="auth-logo">📲</div>
+    <h1 class="auth-h1">Enter code</h1>
+    <p class="auth-sub">Sent to {{ phone }}</p>
   </div>
-
   {% if messages %}
   <div class="msgs">{% for m in messages %}<div class="msg msg-{{ m.tags }}">{{ m }}</div>{% endfor %}</div>
   {% endif %}
-
-  <!-- Step indicator -->
-  <div style="display:flex;align-items:center;gap:.5rem;justify-content:center;margin-bottom:1.5rem">
-    <div style="width:2rem;height:2rem;border-radius:50%;background:var(--success,#22c55e);color:#fff;display:flex;align-items:center;justify-content:center;font-size:.85rem">✓</div>
-    <div style="flex:1;max-width:3rem;height:2px;background:var(--primary)"></div>
-    <div style="width:2rem;height:2rem;border-radius:50%;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center;font-size:.85rem;font-weight:700">2</div>
-    <div style="flex:1;max-width:3rem;height:2px;background:var(--border)"></div>
-    <div style="width:2rem;height:2rem;border-radius:50%;background:var(--border);color:var(--text-muted);display:flex;align-items:center;justify-content:center;font-size:.85rem;font-weight:700">3</div>
-  </div>
-  <p style="text-align:center;font-size:.8rem;color:var(--text-muted);margin-top:-.75rem;margin-bottom:1.25rem">Enter phone &nbsp;›&nbsp; <strong>Verify code</strong> &nbsp;›&nbsp; New PIN</p>
-
   <div class="card">
     <form method="post">
       {% csrf_token %}
-      <div class="fg" style="margin-bottom:1.5rem">
-        <label class="fl">6-Digit Code</label>
-        <input
-          class="fi"
-          type="text"
-          name="code"
-          placeholder="000000"
-          maxlength="6"
-          inputmode="numeric"
-          pattern="[0-9]{6}"
-          autocomplete="one-time-code"
-          autofocus
-          style="letter-spacing:.35em;font-size:1.4rem;text-align:center"
-          required
-        >
-        {% for e in form.code.errors %}<div class="fe">{{ e }}</div>{% endfor %}
+      <input type="hidden" name="phone" value="{{ phone }}">
+      <div class="fg">
+        <label class="fl">Verification Code</label>
+        <input class="fi" type="text" name="code" maxlength="6" placeholder="6-digit code" required autofocus
+               style="letter-spacing:.25em;font-size:1.2rem;text-align:center;font-family:'JetBrains Mono',monospace">
       </div>
-      {% if form.non_field_errors %}
-      <div class="msg msg-error" style="margin-bottom:1rem">{{ form.non_field_errors }}</div>
-      {% endif %}
-      <button type="submit" class="btn btn-primary btn-block" style="border-radius:var(--r-md);padding:.8rem">
-        Verify Code
-      </button>
+      {% if error %}<div class="fe" style="margin-bottom:.75rem">{{ error }}</div>{% endif %}
+      <button type="submit" class="btn btn-primary btn-block">Verify →</button>
     </form>
   </div>
-
-  <!-- countdown hint -->
-  <p style="text-align:center;font-size:.82rem;color:var(--text-muted);margin-top:1rem" id="timer-msg">
-    Code expires in <span id="countdown" style="font-weight:600;color:var(--primary)">10:00</span>
-  </p>
-  <div class="auth-foot">
-    Didn't get a code? <a href="{% url 'pin_reset_request' %}">Resend</a>
-  </div>
+  <div class="auth-foot"><a href="{% url 'pin_reset_request' %}">← Resend code</a></div>
 </div>
-
-<script>
-(function(){
-  var secs = 600;
-  var el = document.getElementById('countdown');
-  var msg = document.getElementById('timer-msg');
-  var t = setInterval(function(){
-    secs--;
-    if(secs <= 0){
-      clearInterval(t);
-      msg.innerHTML = 'Code expired. <a href="{% url "pin_reset_request" %}">Request a new one</a>.';
-      return;
-    }
-    var m = Math.floor(secs/60), s = secs%60;
-    el.textContent = m+':'+(s<10?'0':'')+s;
-  }, 1000);
-})();
-</script>
 {% endblock %}

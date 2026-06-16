@@ -1,941 +1,379 @@
-"""
-models.py — KWallet v2 Data Models
-====================================
-Models for a pan-East African multi-currency wallet with:
-  - Country-aware wallet registration
-  - 5 mandatory home currencies (KES, TZS, UGX, RWF, ETB)
-  - 5 optional international currencies chosen by user
-  - Fee tracking per transaction
-  - Multi-rail payment method storage (M-Pesa, MTN MoMo, Airtel, bank)
-  - Revenue/fee ledger for company accounting
-  - USD-equivalent transaction limits (per-tx: $100, daily: $500 + $10/day growth)
-"""
-
+import hmac
+import hashlib
+import re
 from django.db import models
-from django.contrib.auth.models import User
-from django.core.validators import RegexValidator
-from django.core.exceptions import ValidationError
-from decimal import Decimal
-import secrets
-from typing import List, Tuple, Dict, Any
+from django.contrib.auth.models import AbstractBaseUser, BaseUserManager
 from django.utils import timezone
+from django.conf import settings
+import bcrypt
 
 
-# ── Shared phone-number validator ─────────────────────────────────────────────
-# Kenyan format: starts with 07 or 01, exactly 10 digits total.
-# Defined at module level so every model that stores a phone number can
-# reference the same validator — Wallet, MpesaTransaction, and PaymentMethod
-# phone-based rails all use this.
-PHONE_REGEX = RegexValidator(
-    regex=r'^(07|01)\d{8}$',
-    message='Phone number must start with 07 or 01 and contain exactly 10 digits.',
-)
+# ─────────────────────────────────────────────
+# Risk #14: max 10 currencies per wallet
+MAX_CURRENCIES = 10
 
-# Rails that carry a phone number as their identifier (vs. a bank account number)
-PHONE_RAILS = {
-    'mpesa_ke', 'mpesa_tz',
-    'mtn_ug', 'mtn_rw',
-    'airtel_ke', 'airtel_tz', 'airtel_ug',
-    'tigopesa',
-    'telebirr',
-}
-
-
-# ── All supported currencies ──────────────────────────────────────────────────
-ALL_CURRENCIES = [
-    # East African home currencies
-    ('KES', 'Kenyan Shilling'),
-    ('TZS', 'Tanzanian Shilling'),
-    ('UGX', 'Ugandan Shilling'),
-    ('RWF', 'Rwandan Franc'),
-    ('ETB', 'Ethiopian Birr'),
-    # International currencies (user chooses 5)
-    ('USD', 'US Dollar'),
-    ('EUR', 'Euro'),
-    ('GBP', 'British Pound'),
-    ('JPY', 'Japanese Yen'),
-    ('CNY', 'Chinese Yuan'),
-    ('AED', 'UAE Dirham'),
-    ('INR', 'Indian Rupee'),
-    ('CAD', 'Canadian Dollar'),
-    ('AUD', 'Australian Dollar'),
-    ('CHF', 'Swiss Franc'),
-    ('ZAR', 'South African Rand'),
-    ('NGN', 'Nigerian Naira'),
-    ('GHS', 'Ghanaian Cedi'),
-    ('XOF', 'West African CFA Franc'),
-    ('MUR', 'Mauritian Rupee'),
+TRANSACTION_TYPES = [
+    ('mpesa_deposit',   'M-Pesa Deposit'),
+    ('mpesa_withdraw',  'M-Pesa Withdrawal'),
+    ('airtel_deposit',  'Airtel Money Deposit'),
+    ('airtel_withdraw', 'Airtel Money Withdrawal'),
+    ('bank_deposit',    'Bank Deposit'),
+    ('bank_withdraw',   'Bank Withdrawal'),
+    ('exchange',        'Currency Exchange'),
+    ('p2p_send',        'Transfer Sent'),
+    ('p2p_receive',     'Transfer Received'),
 ]
 
-# Currencies every user gets automatically based on their country
-COUNTRY_HOME_CURRENCY = {
-    'KE': 'KES',
-    'TZ': 'TZS',
-    'UG': 'UGX',
-    'RW': 'RWF',
-    'ET': 'ETB',
-}
-
-# Every wallet gets these regardless of country
-UNIVERSAL_CURRENCIES = ['KES', 'TZS', 'UGX', 'RWF', 'ETB']
-
-INTERNATIONAL_CURRENCIES = [
-    'USD', 'EUR', 'GBP', 'JPY', 'CNY',
-    'AED', 'INR', 'CAD', 'AUD', 'CHF',
-    'ZAR', 'NGN', 'GHS', 'XOF', 'MUR',
+TRANSACTION_STATUSES = [
+    ('pending',   'Pending'),
+    ('completed', 'Completed'),
+    ('failed',    'Failed'),
+    ('refunded',  'Refunded'),
 ]
 
-COUNTRY_CHOICES = [
-    ('KE', 'Kenya'),
-    ('TZ', 'Tanzania'),
-    ('UG', 'Uganda'),
-    ('RW', 'Rwanda'),
-    ('ET', 'Ethiopia'),
+KYC_STATUSES = [
+    ('pending',  'Pending'),
+    ('verified', 'Verified'),
+    ('rejected', 'Rejected'),
 ]
 
-
-# ── Default USD limits for new users ─────────────────────────────────────────
-# All limits are expressed in USD-equivalent and compared against the
-# USD value of the currency being transacted.
-
-DEFAULT_PER_TRANSACTION_LIMIT_USD = Decimal('100.00')   # max single tx
-DEFAULT_DAILY_LIMIT_USD           = Decimal('500.00')   # day-0 daily cap
-DAILY_LIMIT_INCREMENT_USD         = Decimal('10.00')    # grows $10/day
-
-
-# ====================== TIERED BRACKETS (M-Pesa Style - Applied to All) ======================
-
-SEND_BRACKETS: List[Tuple[Decimal, Decimal, Decimal]] = [
-    (Decimal('1'),     Decimal('49'),     Decimal('0')),
-    (Decimal('50'),    Decimal('100'),    Decimal('0')),
-    (Decimal('101'),   Decimal('500'),    Decimal('7')),
-    (Decimal('501'),   Decimal('1000'),   Decimal('13')),
-    (Decimal('1001'),  Decimal('1500'),   Decimal('23')),
-    (Decimal('1501'),  Decimal('2500'),   Decimal('33')),
-    (Decimal('2501'),  Decimal('3500'),   Decimal('53')),
-    (Decimal('3501'),  Decimal('5000'),   Decimal('57')),
-    (Decimal('5001'),  Decimal('7500'),   Decimal('78')),
-    (Decimal('7501'),  Decimal('10000'),  Decimal('90')),
-    (Decimal('10001'), Decimal('15000'),  Decimal('100')),
-    (Decimal('15001'), Decimal('20000'),  Decimal('105')),
-    (Decimal('20001'), Decimal('35000'),  Decimal('108')),
-    (Decimal('35001'), Decimal('50000'),  Decimal('108')),
-    (Decimal('50001'), Decimal('250000'), Decimal('108')),
+# Tiered M-Pesa / Airtel withdrawal fees (KES)
+WITHDRAW_BRACKETS = [
+    (50,    100,   11),
+    (101,   500,   29),
+    (501,   1500,  29),
+    (1501,  2500,  29),
+    (2501,  3500,  52),
+    (3501,  5000,  69),
+    (5001,  7500,  87),
+    (7501,  10000, 115),
+    (10001, 15000, 167),
+    (15001, 20000, 185),
+    (20001, 35000, 197),
+    (35001, 50000, 278),
+    (50001, 250000,309),
 ]
 
-WITHDRAW_BRACKETS: List[Tuple[Decimal, Decimal, Decimal]] = [
-    (Decimal('50'),    Decimal('100'),    Decimal('11')),
-    (Decimal('101'),   Decimal('500'),    Decimal('29')),
-    (Decimal('501'),   Decimal('1000'),   Decimal('29')),
-    (Decimal('1001'),  Decimal('1500'),   Decimal('29')),
-    (Decimal('1501'),  Decimal('2500'),   Decimal('29')),
-    (Decimal('2501'),  Decimal('3500'),   Decimal('52')),
-    (Decimal('3501'),  Decimal('5000'),   Decimal('69')),
-    (Decimal('5001'),  Decimal('7500'),   Decimal('87')),
-    (Decimal('7501'),  Decimal('10000'),  Decimal('115')),
-    (Decimal('10001'), Decimal('15000'),  Decimal('167')),
-    (Decimal('15001'), Decimal('20000'),  Decimal('185')),
-    (Decimal('20001'), Decimal('35000'),  Decimal('197')),
-    (Decimal('35001'), Decimal('50000'),  Decimal('278')),
-    (Decimal('50001'), Decimal('250000'), Decimal('309')),
+# Tiered P2P send fees (KES)
+SEND_BRACKETS = [
+    (1,     100,   0),
+    (101,   500,   7),
+    (501,   1000,  13),
+    (1001,  1500,  23),
+    (1501,  2500,  33),
+    (2501,  3500,  53),
+    (3501,  5000,  57),
+    (5001,  7500,  78),
+    (7501,  10000, 90),
+    (10001, 15000, 100),
+    (15001, 20000, 105),
+    (20001, 250000,108),
 ]
 
+# Bank flat fee
+BANK_WITHDRAW_FEE = 50
 
-def get_tiered_fee(amount: Decimal, brackets: List[Tuple[Decimal, Decimal, Decimal]]) -> Decimal:
-    if amount <= 0:
-        return Decimal('0')
-    amount = amount.quantize(Decimal('0.01'))
-    for min_amt, max_amt, fee in brackets:
-        if min_amt <= amount <= max_amt:
+# AML daily withdrawal limit (Risk #16)
+DAILY_WITHDRAW_LIMIT = 70_000  # KES
+
+# Exchange rate fallback limits (Risk #01)
+STALE_RATE_MAX_EXCHANGE = 5_000  # KES equivalent
+
+
+def get_withdraw_fee(amount):
+    for mn, mx, fee in WITHDRAW_BRACKETS:
+        if mn <= amount <= mx:
             return fee
-    return brackets[-1][2]
+    return 309
 
 
-# ── Exchange fee tiers (USD-equivalent thresholds) ────────────────────────────
-# Rate steps DOWN as the exchange amount grows — rewards larger transactions
-# without punishing everyday users.
-#
-#   $0 – $500        → 1.50%   (standard rate, covers rate-cache spread risk)
-#   $500.01 – $2,000 → 1.00%   (mid-tier discount)
-#   $2,000.01 – $10k → 0.75%   (high-value discount)
-#   $10,000.01+      → 0.50%   (wholesale / power-user rate)
-#
-# Each bracket: (usd_min, usd_max_or_None, rate_as_decimal)
-# usd_max=None means unbounded (last bracket).
-
-EXCHANGE_FEE_TIERS: List[Tuple[Decimal, Any, Decimal]] = [
-    (Decimal('0'),        Decimal('500'),    Decimal('0.0150')),
-    (Decimal('500.01'),   Decimal('2000'),   Decimal('0.0100')),
-    (Decimal('2000.01'),  Decimal('10000'),  Decimal('0.0075')),
-    (Decimal('10000.01'), None,              Decimal('0.0050')),
-]
+def get_send_fee(amount):
+    for mn, mx, fee in SEND_BRACKETS:
+        if mn <= amount <= mx:
+            return fee
+    return 108
 
 
-def get_exchange_fee_rate(usd_equivalent: Decimal) -> Decimal:
-    """
-    Returns the applicable percentage rate (as a Decimal fraction, e.g. 0.015)
-    for a given USD-equivalent exchange amount.
-    """
-    for usd_min, usd_max, rate in EXCHANGE_FEE_TIERS:
-        if usd_max is None:
-            if usd_equivalent >= usd_min:
-                return rate
-        elif usd_min <= usd_equivalent <= usd_max:
-            return rate
-    return EXCHANGE_FEE_TIERS[0][2]  # fallback to highest rate
+def mask_phone(phone: str) -> str:
+    """Risk #06: mask phone to first 3 + last 2 digits."""
+    phone = re.sub(r'\D', '', phone)
+    if len(phone) >= 6:
+        return phone[:3] + '*' * (len(phone) - 5) + phone[-2:]
+    return '***'
 
 
-# ====================== FEE SCHEDULE ======================
-
-FEE_SCHEDULE: Dict[str, Dict[str, Any]] = {
-    # SEND / P2P Transfers — tiered flat fees (M-Pesa style)
-    'mpesa_send':      {'type': 'tiered', 'brackets': SEND_BRACKETS,     'pct': Decimal('0')},
-    'mtn_send':        {'type': 'tiered', 'brackets': SEND_BRACKETS,     'pct': Decimal('0')},
-    'airtel_send':     {'type': 'tiered', 'brackets': SEND_BRACKETS,     'pct': Decimal('0')},
-    'bank_transfer':   {'type': 'tiered', 'brackets': SEND_BRACKETS,     'pct': Decimal('0')},
-    'p2p_send':        {'type': 'tiered', 'brackets': SEND_BRACKETS,     'pct': Decimal('0')},
-
-    # WITHDRAWALS — tiered flat fees (M-Pesa style)
-    'mpesa_withdraw':  {'type': 'tiered', 'brackets': WITHDRAW_BRACKETS, 'pct': Decimal('0')},
-    'mtn_withdraw':    {'type': 'tiered', 'brackets': WITHDRAW_BRACKETS, 'pct': Decimal('0')},
-    'airtel_withdraw': {'type': 'tiered', 'brackets': WITHDRAW_BRACKETS, 'pct': Decimal('0')},
-    'bank_withdraw':   {'type': 'tiered', 'brackets': WITHDRAW_BRACKETS, 'pct': Decimal('0')},
-
-    # DEPOSITS — free
-    'mpesa_deposit':   {'type': 'percent', 'pct': Decimal('0.000'), 'min': Decimal('0')},
-    'mtn_deposit':     {'type': 'percent', 'pct': Decimal('0.000'), 'min': Decimal('0')},
-    'airtel_deposit':  {'type': 'percent', 'pct': Decimal('0.000'), 'min': Decimal('0')},
-    'bank_deposit':    {'type': 'percent', 'pct': Decimal('0.000'), 'min': Decimal('0')},
-
-    # EXCHANGE — tiered percentage based on USD-equivalent amount.
-    # calculate_fee() handles the USD conversion internally.
-    'exchange':        {'type': 'exchange_tiered'},
-}
+def mask_name(name: str) -> str:
+    """Risk #06: mask name to first initial + last initial."""
+    parts = name.strip().split()
+    if len(parts) >= 2:
+        return f"{parts[0][0]}*** {parts[-1][0]}***"
+    if parts:
+        return f"{parts[0][0]}***"
+    return '***'
 
 
-def calculate_fee(transaction_type: str, amount: Decimal, currency: str = 'USD') -> Decimal:
-    """
-    Calculate the fee for a transaction.
+# ─────────────────────────────────────────────
+class WalletUserManager(BaseUserManager):
+    def create_user(self, phone, pin, **extra):
+        if not phone:
+            raise ValueError('Phone is required')
+        user = self.model(phone=phone, **extra)
+        user.set_pin(pin)
+        user.save(using=self._db)
+        return user
 
-    For 'exchange' transactions the fee uses a tiered percentage that steps
-    down as the USD-equivalent amount grows.  Pass `currency` so the function
-    can convert to USD before selecting the tier.
-
-    All other transaction types ignore `currency`.
-    """
-    schedule = FEE_SCHEDULE.get(transaction_type)
-    if not schedule:
-        return Decimal('0')
-
-    amount = amount.quantize(Decimal('0.01'))
-
-    if schedule['type'] == 'tiered':
-        return get_tiered_fee(amount, schedule['brackets'])
-
-    if schedule['type'] == 'exchange_tiered':
-        # Convert source amount to USD to determine which tier applies,
-        # then apply that rate to the original amount.
-        usd_equiv = amount  # default: already USD
-        if currency != 'USD':
-            try:
-                from . import rates as rate_service
-                rates    = rate_service.get_rates()
-                usd_rate = rates.get(f"{currency}_USD")
-                if usd_rate:
-                    usd_equiv = (amount * usd_rate).quantize(Decimal('0.01'))
-            except Exception:
-                pass  # fallback: treat as USD-equivalent for tier lookup
-        rate = get_exchange_fee_rate(usd_equiv)
-        return (amount * rate).quantize(Decimal('0.0001'))
-
-    # Flat percentage (deposits, etc.)
-    fee = (amount * schedule['pct']).quantize(Decimal('0.0001'))
-    return max(fee, schedule.get('min', Decimal('0')))
+    def create_superuser(self, phone, pin, **extra):
+        extra.setdefault('is_staff', True)
+        extra.setdefault('is_superuser', True)
+        return self.create_user(phone, pin, **extra)
 
 
-# ── Wallet ────────────────────────────────────────────────────────────────────
+class WalletUser(AbstractBaseUser):
+    phone        = models.CharField(max_length=20, unique=True)
+    first_name   = models.CharField(max_length=80, blank=True)
+    last_name    = models.CharField(max_length=80, blank=True)
+    is_active    = models.BooleanField(default=True)
+    is_staff     = models.BooleanField(default=False)
+    is_superuser = models.BooleanField(default=False)
+    date_joined  = models.DateTimeField(default=timezone.now)
 
+    # Risk #03: brute-force tracking
+    failed_login_attempts = models.PositiveIntegerField(default=0)
+    locked_until          = models.DateTimeField(null=True, blank=True)
+
+    USERNAME_FIELD  = 'phone'
+    REQUIRED_FIELDS = []
+    objects = WalletUserManager()
+
+    class Meta:
+        verbose_name = 'User'
+
+    def __str__(self):
+        return self.phone
+
+    def get_full_name(self):
+        return f"{self.first_name} {self.last_name}".strip() or self.phone
+
+    # Risk #03 & #17: PIN stored with bcrypt + pepper
+    def set_pin(self, raw_pin: str):
+        pepper = settings.SECRET_KEY[:32].encode()
+        peppered = hmac.new(pepper, raw_pin.encode(), hashlib.sha256).hexdigest()
+        hashed = bcrypt.hashpw(peppered.encode(), bcrypt.gensalt(rounds=12))
+        self.password = hashed.decode()
+        self.failed_login_attempts = 0
+        self.locked_until = None
+
+    def check_pin(self, raw_pin: str) -> bool:
+        pepper = settings.SECRET_KEY[:32].encode()
+        peppered = hmac.new(pepper, raw_pin.encode(), hashlib.sha256).hexdigest()
+        try:
+            return bcrypt.checkpw(peppered.encode(), self.password.encode())
+        except Exception:
+            return False
+
+    def is_locked(self) -> bool:
+        """Risk #03: check whether account is currently locked."""
+        if self.locked_until and timezone.now() < self.locked_until:
+            return True
+        return False
+
+    def record_failed_login(self):
+        """Risk #03: increment counter and lock after 5 failures."""
+        self.failed_login_attempts += 1
+        if self.failed_login_attempts >= 5:
+            self.locked_until = timezone.now() + timezone.timedelta(minutes=15)
+        self.save(update_fields=['failed_login_attempts', 'locked_until'])
+
+    def record_successful_login(self):
+        self.failed_login_attempts = 0
+        self.locked_until = None
+        self.save(update_fields=['failed_login_attempts', 'locked_until'])
+
+    def has_perm(self, perm, obj=None):
+        return self.is_superuser
+
+    def has_module_perms(self, app_label):
+        return self.is_superuser
+
+
+# ─────────────────────────────────────────────
 class Wallet(models.Model):
-
-    KYC_CHOICES = [
-        ('pending',  'Pending'),
-        ('verified', 'Verified'),
-        ('rejected', 'Rejected'),
-    ]
-
-    wallet_id  = models.CharField(max_length=20, unique=True, editable=False, primary_key=True)
-    user       = models.OneToOneField(User, on_delete=models.CASCADE, related_name='wallet')
-    phone      = models.CharField(max_length=10, unique=True, validators=[PHONE_REGEX])
-    pin_hash   = models.CharField(max_length=128)
-    country    = models.CharField(max_length=2, choices=COUNTRY_CHOICES, default='KE')
-    kyc_status = models.CharField(max_length=10, choices=KYC_CHOICES, default='pending')
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    def clean(self):
-        """Run field-level validators explicitly so phone format is enforced
-        even when .save() is called directly (e.g. from management commands
-        or the Django shell), not only via ModelForm."""
-        super().clean()
-        try:
-            PHONE_REGEX(self.phone)
-        except ValidationError as exc:
-            raise ValidationError({'phone': exc.messages})
-
-    def save(self, *args, **kwargs):
-        # Always validate phone before persisting — guards programmatic saves
-        # that bypass form validation.
-        self.full_clean()
-        if not self.wallet_id:
-            self.wallet_id = 'kwl_' + secrets.token_hex(6)
-        super().save(*args, **kwargs)
-
-    def __str__(self):
-        return f"{self.user.get_full_name()} [{self.country}] — {self.phone}"
-
-    @property
-    def home_currency(self):
-        return COUNTRY_HOME_CURRENCY.get(self.country, 'KES')
-
-    def get_balance(self, currency_code):
-        try:
-            return self.currency_balances.get(currency=currency_code).balance
-        except CurrencyBalance.DoesNotExist:
-            return Decimal('0.00')
-
-    def get_all_balances(self):
-        return {cb.currency: cb.balance for cb in self.currency_balances.all()}
-
-    def get_active_currencies(self):
-        return list(self.currency_balances.values_list('currency', flat=True))
-
-    @property
-    def days_since_registration(self) -> int:
-        """Number of complete days since the wallet was created."""
-        return (timezone.now().date() - self.created_at.date()).days
-
-
-# ── CurrencyBalance ────────────────────────────────────────────────────────────
-
-class CurrencyBalance(models.Model):
-    wallet   = models.ForeignKey(Wallet, on_delete=models.CASCADE, related_name='currency_balances')
-    currency = models.CharField(max_length=3, choices=ALL_CURRENCIES)
-    balance  = models.DecimalField(max_digits=18, decimal_places=4, default=Decimal('0.0000'))
-    last_updated = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        unique_together = ('wallet', 'currency')
-        ordering = ['currency']
-
-    def __str__(self):
-        return f"{self.wallet.phone} | {self.currency}: {self.balance}"
-
-
-# ── PaymentMethod ─────────────────────────────────────────────────────────────
-
-class PaymentMethod(models.Model):
-    """
-    Stores a user's registered payment methods (mobile money, bank, etc).
-    Each method is tied to a specific rail and can be used for deposit/withdrawal.
-    """
-    RAIL_CHOICES = [
-        ('mpesa_ke',      'M-Pesa Kenya'),
-        ('mpesa_tz',      'M-Pesa Tanzania'),
-        ('mtn_ug',        'MTN MoMo Uganda'),
-        ('mtn_rw',        'MTN MoMo Rwanda'),
-        ('airtel_ke',     'Airtel Money Kenya'),
-        ('airtel_tz',     'Airtel Tanzania'),
-        ('airtel_ug',     'Airtel Uganda'),
-        ('tigopesa',      'Tigo Pesa Tanzania'),
-        ('telebirr',      'Telebirr Ethiopia'),
-        ('bank_pesalink', 'PesaLink Kenya'),
-        ('bank_swift',    'SWIFT International'),
-    ]
-
-    wallet      = models.ForeignKey(Wallet, on_delete=models.CASCADE, related_name='payment_methods')
-    rail        = models.CharField(max_length=20, choices=RAIL_CHOICES)
-    label       = models.CharField(max_length=60)       # e.g. "My Safaricom Line"
-    identifier  = models.CharField(max_length=100)      # phone number or account number
-    currency    = models.CharField(max_length=3)        # currency this rail operates in
-    country     = models.CharField(max_length=2)
-    is_verified = models.BooleanField(default=False)
-    is_default  = models.BooleanField(default=False)
-    added_at    = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        unique_together = ('wallet', 'rail', 'identifier')
-
-    def clean(self):
-        """Validate that phone-based rails carry a properly formatted phone number."""
-        super().clean()
-        if self.rail in PHONE_RAILS:
-            try:
-                PHONE_REGEX(self.identifier)
-            except ValidationError:
-                raise ValidationError({
-                    'identifier': (
-                        f"The '{self.get_rail_display()}' rail requires a valid phone number "
-                        f"(starts with 07 or 01, exactly 10 digits). Got: '{self.identifier}'."
-                    )
-                })
-
-    def save(self, *args, **kwargs):
-        self.full_clean()
-        super().save(*args, **kwargs)
-
-    def __str__(self):
-        return f"{self.label} ({self.rail}) — {self.identifier}"
-
-
-# ── Transaction ────────────────────────────────────────────────────────────────
-
-class Transaction(models.Model):
-    TYPE_CHOICES = [
-        ('mpesa_deposit',   'M-Pesa Deposit'),
-        ('mpesa_withdraw',  'M-Pesa Withdrawal'),
-        ('mtn_deposit',     'MTN MoMo Deposit'),
-        ('mtn_withdraw',    'MTN MoMo Withdrawal'),
-        ('airtel_deposit',  'Airtel Deposit'),
-        ('airtel_withdraw',  'Airtel Withdrawal'),
-        ('bank_deposit',    'Bank Deposit'),
-        ('bank_withdraw',   'Bank Withdrawal'),
-        ('exchange',        'Currency Exchange'),
-        ('p2p_send',        'P2P Send'),
-        ('p2p_receive',     'P2P Receive'),
-        ('fee',             'Platform Fee'),
-    ]
-    STATUS_CHOICES = [
-        ('pending',   'Pending'),
-        ('completed', 'Completed'),
-        ('failed',    'Failed'),
-        ('refunded',  'Refunded'),
-    ]
-
-    wallet           = models.ForeignKey(Wallet, on_delete=models.CASCADE, related_name='transactions')
-    transaction_type = models.CharField(max_length=20, choices=TYPE_CHOICES)
-    amount           = models.DecimalField(max_digits=18, decimal_places=4)
-    fee              = models.DecimalField(max_digits=18, decimal_places=4, default=Decimal('0'))
-    currency         = models.CharField(max_length=3)
-    status           = models.CharField(max_length=10, choices=STATUS_CHOICES, default='pending')
-    details          = models.TextField(blank=True)
-    reference        = models.CharField(max_length=100, unique=True, blank=True)
-    created_at       = models.DateTimeField(auto_now_add=True)
-    updated_at       = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        ordering = ['-created_at']
-
-    def save(self, *args, **kwargs):
-        if not self.reference:
-            self.reference = 'tx_' + secrets.token_hex(8)
-        super().save(*args, **kwargs)
-
-    def __str__(self):
-        return f"{self.transaction_type} | {self.amount} {self.currency} | {self.status}"
-
-    @property
-    def net_amount(self):
-        """Amount after fee deduction."""
-        return self.amount - self.fee
-
-
-# ── WalletLimit ────────────────────────────────────────────────────────────────
-
-class WalletLimit(models.Model):
-    """
-    Stores USD-equivalent transaction limits for a wallet.
-
-    Limits are defined and enforced in USD-equivalent terms:
-      - per_transaction_limit_usd  : max single transaction value (default $100)
-      - base_daily_limit_usd       : the user's day-0 daily cap (default $500)
-      - daily_limit_increment_usd  : USD added to the daily cap each full day
-                                     since registration (default $10/day)
-
-    At enforcement time, the transaction's currency amount is first converted
-    to its USD equivalent using live/cached exchange rates, then compared
-    against these USD thresholds.
-    """
-
-    wallet = models.OneToOneField(
-        Wallet, on_delete=models.CASCADE, related_name='limit'
-    )
-
-    # Per-transaction cap in USD-equivalent
-    per_transaction_limit_usd = models.DecimalField(
-        max_digits=18, decimal_places=4,
-        default=DEFAULT_PER_TRANSACTION_LIMIT_USD,
-        help_text="Maximum USD-equivalent value allowed for a single transaction.",
-    )
-
-    # Base daily cap in USD-equivalent (before growth increment is applied)
-    base_daily_limit_usd = models.DecimalField(
-        max_digits=18, decimal_places=4,
-        default=DEFAULT_DAILY_LIMIT_USD,
-        help_text="Starting daily limit in USD-equivalent (day 0).",
-    )
-
-    # How much the daily limit grows per day
-    daily_limit_increment_usd = models.DecimalField(
-        max_digits=18, decimal_places=4,
-        default=DAILY_LIMIT_INCREMENT_USD,
-        help_text="USD added to the daily cap for each full day since registration.",
-    )
-
+    user        = models.OneToOneField(WalletUser, on_delete=models.CASCADE, related_name='wallet')
+    wallet_id   = models.CharField(max_length=20, unique=True)
+    phone       = models.CharField(max_length=20)
+    home_currency = models.CharField(max_length=3, default='KES')
+    kyc_status  = models.CharField(max_length=10, choices=KYC_STATUSES, default='pending')  # Risk #15
+    kyc_verified_at = models.DateTimeField(null=True, blank=True)
     created_at  = models.DateTimeField(auto_now_add=True)
     updated_at  = models.DateTimeField(auto_now=True)
 
     def __str__(self):
-        return (
-            f"{self.wallet.phone} limits | "
-            f"per-tx: ${self.per_transaction_limit_usd} | "
-            f"daily base: ${self.base_daily_limit_usd} + "
-            f"${self.daily_limit_increment_usd}/day"
-        )
+        return f"Wallet({self.wallet_id}) — {self.phone}"
 
-    # ── computed properties ──────────────────────────────────────────────────
+    def get_kes_balance(self):
+        cb = self.currency_balances.filter(currency='KES').first()
+        return cb.balance if cb else 0
 
-    @property
-    def effective_daily_limit_usd(self) -> Decimal:
-        """
-        Current daily limit = base + (days since registration × increment).
-        Example: day 0 → $500, day 1 → $510, day 30 → $800, etc.
-        """
-        days = self.wallet.days_since_registration
-        return (
-            self.base_daily_limit_usd
-            + Decimal(days) * self.daily_limit_increment_usd
-        ).quantize(Decimal('0.01'))
-
-    # ── enforcement helpers ──────────────────────────────────────────────────
-
-    def _to_usd(self, amount: Decimal, currency: str) -> Decimal:
-        """Convert an amount in `currency` to its USD equivalent."""
-        if currency == 'USD':
-            return amount.quantize(Decimal('0.01'))
-        from . import rates as rate_service
-        rates = rate_service.get_rates()
-        rate  = rates.get(f"{currency}_USD")
-        if not rate:
-            # Fallback: use hardcoded rates if live unavailable
-            from .rates import USD_FALLBACK
-            usd_rate = USD_FALLBACK.get(currency)
-            if usd_rate:
-                rate = (Decimal('1') / usd_rate).quantize(Decimal('0.000001'))
-        if not rate:
-            raise ValueError(f"Cannot convert {currency} to USD for limit check.")
-        return (amount * rate).quantize(Decimal('0.01'))
-
-    def check_per_transaction(self, amount: Decimal, currency: str) -> Tuple[bool, str]:
-        """
-        Returns (True, '') if the transaction amount is within the per-tx limit,
-        or (False, error_message) if it exceeds the limit.
-        """
-        usd_equiv = self._to_usd(amount, currency)
-        limit     = self.per_transaction_limit_usd
-        if usd_equiv > limit:
-            return False, (
-                f"Transaction of {amount} {currency} (≈ ${usd_equiv} USD) "
-                f"exceeds your single-transaction limit of ${limit} USD."
-            )
-        return True, ''
-
-    def check_daily_limit(self, amount: Decimal, currency: str) -> Tuple[bool, str]:
-        """
-        Returns (True, '') if today's completed outgoing transactions plus this
-        amount are within the effective daily limit, otherwise (False, error_message).
-
-        Only outgoing transaction types count against the daily limit:
-        withdrawals, p2p sends, and exchanges.
-        """
-        OUTGOING_TYPES = (
-            'mpesa_withdraw', 'mtn_withdraw', 'airtel_withdraw', 'bank_withdraw',
-            'p2p_send', 'exchange',
-        )
+    def get_daily_withdrawn(self):
+        """Risk #16: total withdrawn today for AML limit bar."""
         today = timezone.now().date()
-        todays_txns = self.wallet.transactions.filter(
-            created_at__date=today,
-            status='completed',
-            transaction_type__in=OUTGOING_TYPES,
-        )
-
-        # Sum today's outgoing value in USD-equivalent
-        spent_usd = Decimal('0')
-        for tx in todays_txns:
-            try:
-                spent_usd += self._to_usd(tx.amount, tx.currency)
-            except ValueError:
-                pass  # Skip if currency rate unavailable
-
-        usd_equiv   = self._to_usd(amount, currency)
-        daily_limit = self.effective_daily_limit_usd
-
-        if spent_usd + usd_equiv > daily_limit:
-            remaining = max(daily_limit - spent_usd, Decimal('0'))
-            return False, (
-                f"This transaction (≈ ${usd_equiv} USD) would exceed your daily limit "
-                f"of ${daily_limit} USD. "
-                f"You have approximately ${remaining} USD remaining today."
-            )
-        return True, ''
-
-    def check_all(self, amount: Decimal, currency: str) -> Tuple[bool, str]:
-        """
-        Convenience method: runs both per-transaction and daily checks.
-        Returns (True, '') only if both pass.
-        """
-        ok, err = self.check_per_transaction(amount, currency)
-        if not ok:
-            return False, err
-        return self.check_daily_limit(amount, currency)
-
-
-def create_default_wallet_limit(wallet) -> 'WalletLimit':
-    """
-    Creates a WalletLimit with default USD values for a newly registered wallet.
-    Safe to call multiple times — uses get_or_create.
-    """
-    limit, _ = WalletLimit.objects.get_or_create(
-        wallet=wallet,
-        defaults={
-            'per_transaction_limit_usd': DEFAULT_PER_TRANSACTION_LIMIT_USD,
-            'base_daily_limit_usd':      DEFAULT_DAILY_LIMIT_USD,
-            'daily_limit_increment_usd': DAILY_LIMIT_INCREMENT_USD,
-        },
-    )
-    return limit
-
-
-# ── FeeRecord ─────────────────────────────────────────────────────────────────
-
-class FeeRecord(models.Model):
-    """
-    Tracks every fee collected by KWallet for company revenue accounting.
-    Each fee-generating transaction creates one FeeRecord.
-    Used for finance dashboard, tax reporting, and revenue analytics.
-    """
-    transaction  = models.OneToOneField(Transaction, on_delete=models.CASCADE, related_name='fee_record')
-    wallet       = models.ForeignKey(Wallet, on_delete=models.CASCADE, related_name='fees_paid')
-    amount       = models.DecimalField(max_digits=18, decimal_places=4)
-    currency     = models.CharField(max_length=3)
-    fee_type     = models.CharField(max_length=20)  # matches transaction_type
-    collected_at = models.DateTimeField(auto_now_add=True)
-    settlement   = models.ForeignKey(
-        'FeeSettlement',
-        null=True, blank=True,
-        on_delete=models.SET_NULL,
-        related_name='fee_records',
-        help_text="Set when this fee is included in a settlement batch.",
-    )
-
-    class Meta:
-        ordering = ['-collected_at']
-
-    def __str__(self):
-        return f"Fee {self.amount} {self.currency} | {self.fee_type} | {self.collected_at.date()}"
-
-
-# ── MpesaTransaction ──────────────────────────────────────────────────────────
-
-class MpesaTransaction(models.Model):
-    wallet              = models.ForeignKey(Wallet, on_delete=models.CASCADE, related_name='mpesa_transactions')
-    phone               = models.CharField(max_length=10, validators=[PHONE_REGEX])
-    amount              = models.DecimalField(max_digits=10, decimal_places=2)
-    checkout_request_id = models.CharField(max_length=100, unique=True)
-    merchant_request_id = models.CharField(max_length=100)
-    direction           = models.CharField(max_length=10, choices=[('in', 'Deposit'), ('out', 'Withdrawal')])
-    status              = models.CharField(max_length=10, default='pending')
-    result_code         = models.CharField(max_length=10, blank=True)
-    result_desc         = models.CharField(max_length=255, blank=True)
-    mpesa_receipt       = models.CharField(max_length=50, blank=True)
-    created_at          = models.DateTimeField(auto_now_add=True)
-    updated_at          = models.DateTimeField(auto_now=True)
-
-    def __str__(self):
-        return f"M-Pesa {self.direction} | {self.amount} KES | {self.phone} | {self.status}"
-
-
-# ── CompanyAccount ────────────────────────────────────────────────────────────
-
-class CompanyAccount(models.Model):
-    """
-    Represents a real-world account that KWallet controls.
-
-    There are two kinds:
-      CLIENT_FLOAT  — the segregated account where all user deposits land and
-                      all user withdrawals leave from.  The sum of all
-                      CurrencyBalance rows for a given currency must never
-                      exceed the balance of this account in that currency.
-
-      COMPANY_REVENUE — the company's own operating account.  Fee sweeps
-                        land here.  This money belongs to KWallet, not users.
-
-    One CompanyAccount row per real account (e.g. one for the M-Pesa Paybill,
-    one for the KES bank account, one for the USD Equity Bank account, …).
-    """
-
-    ACCOUNT_TYPE_CHOICES = [
-        ('client_float',    'Client Float (Segregated)'),
-        ('company_revenue', 'Company Revenue'),
-    ]
-    RAIL_CHOICES = [
-        ('mpesa',      'M-Pesa Paybill / Till'),
-        ('bank_kes',   'Bank — KES'),
-        ('bank_usd',   'Bank — USD'),
-        ('bank_other', 'Bank — Other Currency'),
-        ('psp',        'PSP / Payment Partner'),
-    ]
-
-    name             = models.CharField(max_length=100, unique=True,
-                           help_text="Human label, e.g. 'M-Pesa Client Float KES'")
-    account_type     = models.CharField(max_length=20, choices=ACCOUNT_TYPE_CHOICES)
-    rail             = models.CharField(max_length=20, choices=RAIL_CHOICES)
-    currency         = models.CharField(max_length=3)
-    identifier       = models.CharField(max_length=100,
-                           help_text="Paybill/till number, IBAN, account number, etc.")
-    # Ledger balance — updated by every PoolLedger entry.
-    # This is KWallet's internal view of what the real account holds.
-    # Should match the real account statement; reconciliation flags any gap.
-    ledger_balance   = models.DecimalField(max_digits=18, decimal_places=4,
-                           default=Decimal('0.0000'))
-    is_active        = models.BooleanField(default=True)
-    notes            = models.TextField(blank=True)
-    created_at       = models.DateTimeField(auto_now_add=True)
-    updated_at       = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        ordering = ['account_type', 'currency', 'name']
-
-    def __str__(self):
-        return f"[{self.get_account_type_display()}] {self.name} ({self.currency})"
-
-    @property
-    def total_user_liability(self) -> Decimal:
-        """
-        Sum of all CurrencyBalance rows for this currency.
-        For client float accounts this should always be ≤ ledger_balance.
-        """
-        if self.account_type != 'client_float':
-            return Decimal('0')
         from django.db.models import Sum
-        result = CurrencyBalance.objects.filter(
-            currency=self.currency
-        ).aggregate(total=Sum('balance'))
-        return (result['total'] or Decimal('0')).quantize(Decimal('0.0001'))
+        result = self.transactions.filter(
+            transaction_type__in=['mpesa_withdraw', 'airtel_withdraw', 'bank_withdraw', 'p2p_send'],
+            status='completed',
+            created_at__date=today,
+        ).aggregate(total=Sum('amount'))
+        return result['total'] or 0
 
-    @property
-    def surplus(self) -> Decimal:
-        """
-        ledger_balance − total_user_liability.
-        Positive = healthy buffer (includes unsettled fees).
-        Negative = INSOLVENT — emergency.
-        """
-        return (self.ledger_balance - self.total_user_liability).quantize(Decimal('0.0001'))
-
-    @property
-    def is_solvent(self) -> bool:
-        return self.surplus >= Decimal('0')
+    def get_daily_pct(self):
+        used = self.get_daily_withdrawn()
+        return min(int((used / DAILY_WITHDRAW_LIMIT) * 100), 100)
 
 
-# ── PoolLedger ────────────────────────────────────────────────────────────────
-
-class PoolLedger(models.Model):
-    """
-    An immutable double-entry record of every real-money movement affecting
-    a CompanyAccount.
-
-    Every time real money flows in or out of a real-world account, one row
-    is written here.  The running sum of all PoolLedger rows for an account
-    must equal CompanyAccount.ledger_balance.
-
-    Entry types:
-      deposit_in     — user deposited; real money landed in client float
-      withdrawal_out — user withdrew; real money left client float
-      fee_sweep_out  — accumulated fees moved from client float → company revenue
-      fee_sweep_in   — same sweep, credit side hitting company revenue account
-      fx_rebalance_out / fx_rebalance_in — manual FX rebalancing between accounts
-      adjustment     — manual correction by an admin (always requires a note)
-    """
-
-    ENTRY_CHOICES = [
-        ('deposit_in',       'Deposit In'),
-        ('withdrawal_out',   'Withdrawal Out'),
-        ('fee_sweep_out',    'Fee Sweep — Debit Client Float'),
-        ('fee_sweep_in',     'Fee Sweep — Credit Company Revenue'),
-        ('fx_rebalance_out', 'FX Rebalance — Out'),
-        ('fx_rebalance_in',  'FX Rebalance — In'),
-        ('adjustment',       'Manual Adjustment'),
-    ]
-
-    account         = models.ForeignKey(CompanyAccount, on_delete=models.PROTECT,
-                          related_name='ledger_entries')
-    entry_type      = models.CharField(max_length=20, choices=ENTRY_CHOICES)
-    amount          = models.DecimalField(max_digits=18, decimal_places=4,
-                          help_text="Always positive. Direction implied by entry_type.")
-    currency        = models.CharField(max_length=3)
-    balance_after   = models.DecimalField(max_digits=18, decimal_places=4,
-                          help_text="CompanyAccount.ledger_balance after this entry.")
-    # Links back to the transaction or settlement that triggered this entry
-    transaction     = models.ForeignKey(Transaction, null=True, blank=True,
-                          on_delete=models.SET_NULL, related_name='pool_entries')
-    settlement      = models.ForeignKey('FeeSettlement', null=True, blank=True,
-                          on_delete=models.SET_NULL, related_name='pool_entries')
-    note            = models.TextField(blank=True)
-    created_at      = models.DateTimeField(auto_now_add=True)
-    created_by      = models.CharField(max_length=100, default='system',
-                          help_text="'system', 'sweep_job', or admin username.")
+class CurrencyBalance(models.Model):
+    wallet   = models.ForeignKey(Wallet, on_delete=models.CASCADE, related_name='currency_balances')
+    currency = models.CharField(max_length=3)
+    balance  = models.DecimalField(max_digits=18, decimal_places=6, default=0)
+    added_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        ordering = ['-created_at']
+        unique_together = ('wallet', 'currency')
 
     def __str__(self):
-        return (
-            f"{self.entry_type} | {self.amount} {self.currency} "
-            f"→ {self.account.name} | bal: {self.balance_after}"
-        )
+        return f"{self.wallet.wallet_id} — {self.currency} {self.balance}"
 
 
-# ── FeeSettlement ─────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────
+class Transaction(models.Model):
+    wallet           = models.ForeignKey(Wallet, on_delete=models.CASCADE, related_name='transactions')
+    transaction_type = models.CharField(max_length=20, choices=TRANSACTION_TYPES)
+    currency         = models.CharField(max_length=3, default='KES')
+    amount           = models.DecimalField(max_digits=18, decimal_places=6)
+    fee              = models.DecimalField(max_digits=18, decimal_places=6, default=0)
+    status           = models.CharField(max_length=12, choices=TRANSACTION_STATUSES, default='pending')
 
-class FeeSettlement(models.Model):
-    """
-    Records one batch sweep of collected fees from the client float account
-    to the company revenue account.
+    # Risk #06: details field stores only masked PII — never full name/phone
+    details          = models.CharField(max_length=200, blank=True)
 
-    One FeeSettlement covers all FeeRecord rows that were unsettled at the
-    time the sweep ran.  After the sweep:
-      - FeeRecord.settlement is set to this object
-      - PoolLedger debit entry written against the client float account
-      - PoolLedger credit entry written against the company revenue account
-      - Both CompanyAccount.ledger_balance values are updated atomically
+    # For M-Pesa / Airtel idempotency (Risk #02)
+    external_ref     = models.CharField(max_length=120, blank=True, db_index=True)
+    idempotency_key  = models.CharField(max_length=64, unique=True, null=True, blank=True)
 
-    Status flow:  pending → completed | failed
-    """
+    # For bank transfers
+    bank_name        = models.CharField(max_length=80, blank=True)
+    bank_account     = models.CharField(max_length=80, blank=True)
 
-    STATUS_CHOICES = [
-        ('pending',   'Pending'),
-        ('completed', 'Completed'),
-        ('failed',    'Failed'),
-    ]
-
-    reference        = models.CharField(max_length=40, unique=True, editable=False)
-    currency         = models.CharField(max_length=3)
-    total_fees       = models.DecimalField(max_digits=18, decimal_places=4,
-                           help_text="Sum of all FeeRecord amounts in this batch.")
-    fee_count        = models.IntegerField(default=0,
-                           help_text="Number of FeeRecord rows included.")
-    from_account     = models.ForeignKey(CompanyAccount, on_delete=models.PROTECT,
-                           related_name='sweeps_out',
-                           help_text="Client float account being debited.")
-    to_account       = models.ForeignKey(CompanyAccount, on_delete=models.PROTECT,
-                           related_name='sweeps_in',
-                           help_text="Company revenue account being credited.")
-    status           = models.CharField(max_length=10, choices=STATUS_CHOICES,
-                           default='pending')
-    failure_reason   = models.TextField(blank=True)
-    initiated_by     = models.CharField(max_length=100, default='system')
-    created_at       = models.DateTimeField(auto_now_add=True)
-    completed_at     = models.DateTimeField(null=True, blank=True)
-
-    class Meta:
-        ordering = ['-created_at']
-
-    def save(self, *args, **kwargs):
-        if not self.reference:
-            self.reference = 'settle_' + secrets.token_hex(8)
-        super().save(*args, **kwargs)
-
-    def __str__(self):
-        return (
-            f"Settlement {self.reference} | {self.total_fees} {self.currency} "
-            f"| {self.fee_count} fees | {self.status}"
-        )
-
-
-# NOTE: FeeRecord.settlement ForeignKey is defined directly on the model above.
-# Access via:  fee_record.settlement  (may be None = unsettled)
-
-
-# ── PaymentRequest ────────────────────────────────────────────────────────────
-
-class PaymentRequest(models.Model):
-    """
-    Represents a QR-code payment link generated by a wallet owner.
-
-    Two modes:
-      FIXED  — amount is set by the creator; payer cannot change it.
-               Good for invoices, split bills, merchant checkouts.
-      OPEN   — amount is left blank; payer enters any amount.
-               Good for tips, donations, general "send me money".
-
-    Flow:
-      1. Wallet owner creates a PaymentRequest (optionally with amount + note).
-      2. A QR code is generated encoding /pay/<token>/.
-      3. Anyone scans the QR → lands on the public pay page.
-      4. Payer enters their M-Pesa phone number (no KWallet account needed).
-      5. STK Push fires against the payer's phone.
-      6. On success, the wallet owner's KES balance is credited via the
-         existing mpesa_callback flow (account_ref = token).
-
-    Status:
-      active   — accepting payments (default)
-      paid     — single-use QR that has been paid
-      expired  — past expires_at
-      disabled — manually deactivated by owner
-    """
-
-    STATUS_CHOICES = [
-        ('active',   'Active'),
-        ('paid',     'Paid'),
-        ('expired',  'Expired'),
-        ('disabled', 'Disabled'),
-    ]
-
-    wallet     = models.ForeignKey(
-        Wallet, on_delete=models.CASCADE, related_name='payment_requests'
+    # For P2P — stores masked recipient only (Risk #06)
+    recipient_wallet = models.ForeignKey(
+        Wallet, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name='received_transactions'
     )
-    token      = models.CharField(
-        max_length=24, unique=True, editable=False,
-        help_text="Random slug embedded in the QR URL — /pay/<token>/",
-    )
-    # Optional fixed amount. If None the payer enters their own amount.
-    amount     = models.DecimalField(
-        max_digits=18, decimal_places=2, null=True, blank=True,
-        help_text="Leave blank to let the payer choose any amount.",
-    )
-    note       = models.CharField(
-        max_length=120, blank=True,
-        help_text="Short description shown to the payer (e.g. 'Lunch split', 'Invoice #4').",
-    )
-    # Single-use vs reusable
-    single_use = models.BooleanField(
-        default=False,
-        help_text="If True, the QR is disabled after the first successful payment.",
-    )
-    expires_at = models.DateTimeField(
-        null=True, blank=True,
-        help_text="Optional expiry. Leave blank for a permanent link.",
-    )
-    status     = models.CharField(
-        max_length=10, choices=STATUS_CHOICES, default='active'
-    )
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ['-created_at']
 
-    def save(self, *args, **kwargs):
-        if not self.token:
-            self.token = secrets.token_urlsafe(16)
-        super().save(*args, **kwargs)
-
     def __str__(self):
-        amt = f"KES {self.amount}" if self.amount else "open amount"
-        return f"PayReq [{self.token[:8]}…] {amt} → {self.wallet.phone} [{self.status}]"
+        return f"{self.transaction_type} {self.currency} {self.amount} [{self.status}]"
 
     @property
-    def is_valid(self) -> bool:
-        """True if this payment request can still accept a new payment."""
-        if self.status != 'active':
+    def masked_recipient(self):
+        """Risk #06: returns masked phone for display in history."""
+        if self.recipient_wallet:
+            return mask_phone(self.recipient_wallet.phone)
+        return '***'
+
+
+# ─────────────────────────────────────────────
+class MpesaTransaction(models.Model):
+    """Tracks M-Pesa STK push / B2C references to prevent double-credit (Risk #02)."""
+    wallet              = models.ForeignKey(Wallet, on_delete=models.CASCADE)
+    checkout_request_id = models.CharField(max_length=100, unique=True, db_index=True)
+    merchant_request_id = models.CharField(max_length=100, blank=True)
+    amount              = models.DecimalField(max_digits=12, decimal_places=2)
+    phone               = models.CharField(max_length=20)
+    status              = models.CharField(max_length=12, choices=TRANSACTION_STATUSES, default='pending')
+    mpesa_receipt       = models.CharField(max_length=60, blank=True)
+    transaction_type    = models.CharField(max_length=20, default='mpesa_deposit')
+    created_at          = models.DateTimeField(auto_now_add=True)
+    updated_at          = models.DateTimeField(auto_now=True)
+    # Risk #04: timeout field for orphaned pending withdrawals
+    timeout_at          = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+
+class AirtelTransaction(models.Model):
+    """Tracks Airtel Money collection / disbursement to prevent double-credit."""
+    wallet           = models.ForeignKey(Wallet, on_delete=models.CASCADE)
+    airtel_ref       = models.CharField(max_length=100, unique=True, db_index=True)
+    amount           = models.DecimalField(max_digits=12, decimal_places=2)
+    phone            = models.CharField(max_length=20)
+    status           = models.CharField(max_length=12, choices=TRANSACTION_STATUSES, default='pending')
+    transaction_type = models.CharField(max_length=20, default='airtel_deposit')
+    created_at       = models.DateTimeField(auto_now_add=True)
+    updated_at       = models.DateTimeField(auto_now=True)
+    timeout_at       = models.DateTimeField(null=True, blank=True)  # Risk #04
+
+
+class BankTransaction(models.Model):
+    """Tracks PesaLink / RTGS transactions."""
+    wallet           = models.ForeignKey(Wallet, on_delete=models.CASCADE)
+    pesalink_ref     = models.CharField(max_length=100, unique=True, db_index=True)
+    amount           = models.DecimalField(max_digits=12, decimal_places=2)
+    bank_name        = models.CharField(max_length=80)
+    account_number   = models.CharField(max_length=80)
+    account_name     = models.CharField(max_length=120)
+    status           = models.CharField(max_length=12, choices=TRANSACTION_STATUSES, default='pending')
+    transaction_type = models.CharField(max_length=20, default='bank_deposit')
+    created_at       = models.DateTimeField(auto_now_add=True)
+    updated_at       = models.DateTimeField(auto_now=True)
+    timeout_at       = models.DateTimeField(null=True, blank=True)  # Risk #04
+
+
+# ─────────────────────────────────────────────
+class PoolLedger(models.Model):
+    """Company liquidity ledger — tracked for Risk #04 reconciliation."""
+    currency       = models.CharField(max_length=3, default='KES')
+    entry_type     = models.CharField(max_length=20)  # deposit_in, withdrawal_out, fee_in, exchange
+    amount         = models.DecimalField(max_digits=18, decimal_places=6)
+    reference      = models.CharField(max_length=120, blank=True)
+    created_at     = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+
+class CompanyAccount(models.Model):
+    currency = models.CharField(max_length=3, unique=True)
+    balance  = models.DecimalField(max_digits=18, decimal_places=6, default=0)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    @property
+    def is_solvent(self):
+        return self.balance >= 0
+
+    def __str__(self):
+        return f"CompanyAccount {self.currency}: {self.balance}"
+
+
+# ─────────────────────────────────────────────
+class QRPaymentRequest(models.Model):
+    wallet     = models.ForeignKey(Wallet, on_delete=models.CASCADE, related_name='qr_requests')
+    token      = models.CharField(max_length=64, unique=True, db_index=True)
+    amount     = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    note       = models.CharField(max_length=120, blank=True)
+    single_use = models.BooleanField(default=False)
+    status     = models.CharField(max_length=10, default='active',
+                                  choices=[('active','Active'),('paid','Paid'),('expired','Expired'),('disabled','Disabled')])
+    expires_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def is_valid(self):
+        if self.status not in ('active',):
             return False
         if self.expires_at and timezone.now() > self.expires_at:
             self.status = 'expired'
@@ -943,8 +381,43 @@ class PaymentRequest(models.Model):
             return False
         return True
 
-    def mark_paid(self):
-        """Called after a successful STK push for a single-use request."""
-        if self.single_use:
-            self.status = 'paid'
-            self.save(update_fields=['status', 'updated_at'])
+
+# ─────────────────────────────────────────────
+class SuspiciousActivityFlag(models.Model):
+    """Risk #16: AML — flag structuring / velocity anomalies for compliance review."""
+    wallet      = models.ForeignKey(Wallet, on_delete=models.CASCADE, related_name='flags')
+    flag_type   = models.CharField(max_length=40)  # velocity, structuring, round_number, threshold_breach
+    description = models.TextField()
+    transaction = models.ForeignKey(Transaction, null=True, blank=True, on_delete=models.SET_NULL)
+    reviewed    = models.BooleanField(default=False)
+    created_at  = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"Flag({self.flag_type}) wallet={self.wallet.wallet_id}"
+
+
+class WalletLimit(models.Model):
+    """Per-wallet transaction limits, tightened for unverified users (Risk #15)."""
+    wallet             = models.OneToOneField(Wallet, on_delete=models.CASCADE, related_name='limit')
+    daily_withdraw_kes = models.DecimalField(max_digits=12, decimal_places=2, default=70000)
+    per_txn_max_kes    = models.DecimalField(max_digits=12, decimal_places=2, default=150000)
+    monthly_limit_kes  = models.DecimalField(max_digits=12, decimal_places=2, default=1_000_000)
+
+    def __str__(self):
+        return f"Limit for {self.wallet.wallet_id}"
+
+
+class PinResetToken(models.Model):
+    """Risk #03: secure PIN reset with time-limited token."""
+    user       = models.ForeignKey(WalletUser, on_delete=models.CASCADE)
+    token      = models.CharField(max_length=64, unique=True)
+    code       = models.CharField(max_length=6)
+    used       = models.BooleanField(default=False)
+    expires_at = models.DateTimeField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def is_valid(self):
+        return not self.used and timezone.now() < self.expires_at

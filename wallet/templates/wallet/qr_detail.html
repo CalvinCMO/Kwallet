@@ -1,84 +1,58 @@
 {% extends "wallet/base.html" %}
-{% block title %}Payment Link — KWallet{% endblock %}
-{% block nav_profile %}active{% endblock %}
+{% block title %}QR Payment — KWallet{% endblock %}
 {% block content %}
-<div class="app-shell">
-  <div class="app-scroll">
-    <div class="home-header" style="padding-bottom:8px">
-      <div>
-        <div class="home-greeting">Share to receive</div>
-        <div class="home-name">Payment Link</div>
-      </div>
+<div class="page-sm">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem">
+    <h1 style="font-size:1.4rem;font-weight:800;color:var(--ink);letter-spacing:-.03em">QR Payment</h1>
+    <a href="{% url 'qr_payment_list' %}" class="back-btn">← Back</a>
+  </div>
+
+  {% if messages %}
+  <div class="msgs">{% for m in messages %}<div class="msg msg-{{ m.tags }}">{{ m }}</div>{% endfor %}</div>
+  {% endif %}
+
+  <div class="card" style="text-align:center;margin-bottom:1rem">
+    <div style="margin:0 auto 1rem;padding:1rem;background:var(--bg);border-radius:var(--r-md);display:inline-block">
+      {{ qr_svg|safe }}
     </div>
-
-    {% if messages %}
-    <div style="padding:0 16px 8px">
-      <div class="msgs">{% for m in messages %}<div class="msg msg-{{ m.tags }}">{{ m }}</div>{% endfor %}</div>
+    <div style="font-size:1rem;font-weight:700;color:var(--ink);margin-bottom:.3rem">
+      {% if req.amount %}KES {{ req.amount|floatformat:2 }}{% else %}Open Amount{% endif %}
     </div>
-    {% endif %}
+    <div style="font-size:.8rem;color:var(--ink-3);margin-bottom:.75rem">{{ req.note|default:"No description" }}</div>
+    <span class="badge {% if req.status == 'active' %}bg-green{% elif req.status == 'paid' %}bg-teal{% elif req.status == 'expired' %}bg-gray{% else %}bg-red{% endif %}" style="font-size:.72rem">{{ req.status }}</span>
+  </div>
 
-    {% if pr.status != 'active' %}
-    <div style="padding:0 16px 8px">
-      <div class="msg msg-warning">⚠️ This link is <strong>{{ pr.status }}</strong> and no longer accepting payments.</div>
-    </div>
-    {% endif %}
-
-    <div style="padding:0 16px">
-      {# QR Card #}
-      <div class="card" style="text-align:center;padding:2rem;margin-bottom:12px">
-        <img src="{{ qr_image }}" alt="QR Code"
-             style="width:200px;height:200px;border-radius:16px;border:6px solid var(--bg);display:block;margin:0 auto 16px"/>
-        {% if pr.note %}
-        <div style="font-size:1.1rem;font-weight:700;margin-bottom:4px">{{ pr.note }}</div>
-        {% endif %}
-        {% if pr.amount %}
-        <div style="font-size:1.6rem;font-weight:700;color:var(--teal);font-family:'JetBrains Mono',monospace">KES {{ pr.amount|floatformat:0 }}</div>
-        {% else %}
-        <div style="font-size:.85rem;color:var(--ink-3)">Open amount — payer chooses</div>
-        {% endif %}
-        <div style="display:flex;justify-content:center;gap:6px;flex-wrap:wrap;margin-top:12px">
-          {% if pr.single_use %}<span class="badge bg-amber">One-time</span>{% else %}<span class="badge bg-teal">Reusable</span>{% endif %}
-          {% if pr.expires_at %}<span class="badge bg-gray">Expires {{ pr.expires_at|date:"d M Y" }}</span>{% endif %}
-          <span class="badge {% if pr.status == 'active' %}bg-teal{% elif pr.status == 'paid' %}bg-blue{% else %}bg-red{% endif %}">{{ pr.status|title }}</span>
-        </div>
+  <div class="card card-sm" style="margin-bottom:1rem">
+    <div style="display:flex;flex-direction:column;gap:.5rem">
+      <div style="display:flex;justify-content:space-between;font-size:.8rem">
+        <span style="color:var(--ink-3)">Payment URL</span>
+        <a href="{{ pay_url }}" style="color:var(--teal);font-weight:600;word-break:break-all;text-align:right;font-size:.72rem">{{ pay_url }}</a>
       </div>
-
-      {# Share link #}
-      <div class="card card-sm" style="margin-bottom:12px">
-        <div class="sec-label" style="margin-bottom:6px">Shareable Link</div>
-        <div style="display:flex;gap:8px;align-items:center">
-          <input type="text" class="fi mono" id="payLink" value="{{ pay_url }}" readonly style="font-size:.76rem;flex:1">
-          <button onclick="copyLink()" class="btn btn-light btn-sm" id="copyBtn" style="border-radius:var(--r-full);flex-shrink:0">Copy</button>
-        </div>
+      <div style="display:flex;justify-content:space-between;font-size:.8rem">
+        <span style="color:var(--ink-3)">Single use</span>
+        <span style="font-weight:600">{% if req.single_use %}Yes{% else %}No{% endif %}</span>
       </div>
-
-      {# Actions #}
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <a href="{{ qr_image }}" download="kwallet-qr-{{ pr.token|slice:':8' }}.png"
-           class="btn btn-primary" style="flex:1;justify-content:center;border-radius:var(--r-md)">⬇ Download QR</a>
-        {% if pr.status == 'active' %}
-        <form method="post" action="{% url 'qr_payment_disable' pr.token %}" style="flex:1"
-              onsubmit="return confirm('Disable this link?')">
-          {% csrf_token %}
-          <button type="submit" class="btn btn-danger btn-block" style="border-radius:var(--r-md)">Disable</button>
-        </form>
-        {% endif %}
+      {% if req.expires_at %}
+      <div style="display:flex;justify-content:space-between;font-size:.8rem">
+        <span style="color:var(--ink-3)">Expires</span>
+        <span style="font-weight:600">{{ req.expires_at|date:"d M Y H:i" }}</span>
       </div>
-
-      <div style="text-align:center;margin-top:14px">
-        <a href="{% url 'qr_payment_list' %}" style="color:var(--ink-3);font-size:.82rem">← All Links</a>
+      {% endif %}
+      <div style="display:flex;justify-content:space-between;font-size:.8rem">
+        <span style="color:var(--ink-3)">Created</span>
+        <span>{{ req.created_at|date:"d M Y H:i" }}</span>
       </div>
     </div>
   </div>
-</div>
 
-<script>
-function copyLink(){
-  navigator.clipboard.writeText(document.getElementById('payLink').value).then(()=>{
-    const b=document.getElementById('copyBtn');
-    b.textContent='✓ Copied'; b.style.background='var(--teal)'; b.style.color='#fff';
-    setTimeout(()=>{b.textContent='Copy';b.style.background='';b.style.color='';},2000);
-  });
-}
-</script>
+  <div style="display:flex;gap:.75rem">
+    <a href="{{ pay_url }}" class="btn btn-light" style="flex:1;text-align:center">Share Link</a>
+    {% if req.status == 'active' %}
+    <form method="post" action="{% url 'qr_payment_disable' req.token %}" style="flex:1">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-danger" style="width:100%">Disable</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
 {% endblock %}

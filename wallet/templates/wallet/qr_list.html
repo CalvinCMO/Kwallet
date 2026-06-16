@@ -2,52 +2,42 @@
 {% block title %}QR Pay — KWallet{% endblock %}
 {% block nav_profile %}active{% endblock %}
 {% block content %}
-<div class="app-shell">
-  <div class="app-scroll">
-    <div class="home-header" style="padding-bottom:8px">
-      <div>
-        <div class="home-greeting">Accept M-Pesa payments</div>
-        <div class="home-name">QR Pay</div>
-      </div>
-      <a href="{% url 'qr_payment_create' %}" class="btn btn-primary btn-sm" style="border-radius:var(--r-full);margin-top:6px">+ New</a>
-    </div>
-
-    {% if messages %}
-    <div style="padding:0 16px 8px">
-      <div class="msgs">{% for m in messages %}<div class="msg msg-{{ m.tags }}">{{ m }}</div>{% endfor %}</div>
-    </div>
-    {% endif %}
-
-    {% if requests %}
-    <div class="tx-list">
-      {% for pr in requests %}
-      <a href="{% url 'qr_payment_detail' pr.token %}" class="tx-row" style="text-decoration:none;display:flex">
-        <div class="tx-avatar">
-          <svg viewBox="0 0 24 24" style="width:20px;height:20px;stroke:var(--teal-dk);fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="3" height="3" rx=".5"/></svg>
-        </div>
-        <div class="tx-body">
-          <div class="tx-name">{{ pr.note|default:"Payment Link" }}</div>
-          <div class="tx-date">
-            {% if pr.amount %}<strong>KES {{ pr.amount|floatformat:0 }}</strong>{% else %}Open amount{% endif %}
-            &nbsp;·&nbsp;
-            {% if pr.status == 'active' %}<span class="badge bg-teal">Active</span>
-            {% elif pr.status == 'paid' %}<span class="badge bg-blue">Paid</span>
-            {% elif pr.status == 'expired' %}<span class="badge bg-gray">Expired</span>
-            {% else %}<span class="badge bg-red">Disabled</span>{% endif %}
-            {% if pr.single_use %}&nbsp;<span class="badge bg-amber">One-time</span>{% endif %}
-          </div>
-        </div>
-        <svg viewBox="0 0 24 24" style="width:18px;height:18px;stroke:var(--ink-4);fill:none;stroke-width:1.8;flex-shrink:0;align-self:center"><polyline points="9 18 15 12 9 6"/></svg>
-      </a>
-      {% endfor %}
-    </div>
-    {% else %}
-    <div class="empty">
-      <div class="empty-icon">📷</div>
-      <p>No payment links yet.<br>Create one to receive M-Pesa payments from anyone.</p>
-      <a href="{% url 'qr_payment_create' %}" class="btn btn-primary" style="margin-top:16px;border-radius:var(--r-md)">Create Payment Link</a>
-    </div>
-    {% endif %}
+<div class="page">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem">
+    <h1 style="font-size:1.4rem;font-weight:800;color:var(--ink);letter-spacing:-.03em">QR Payments</h1>
+    <a href="{% url 'qr_payment_create' %}" class="btn btn-primary btn-sm">+ New QR</a>
   </div>
+
+  {% if messages %}
+  <div class="msgs">{% for m in messages %}<div class="msg msg-{{ m.tags }}">{{ m }}</div>{% endfor %}</div>
+  {% endif %}
+
+  {% if payment_requests %}
+  <div style="display:flex;flex-direction:column;gap:.75rem">
+    {% for req in payment_requests %}
+    <div class="card card-sm" style="display:flex;align-items:center;gap:1rem">
+      <div style="width:44px;height:44px;background:var(--teal-50);border-radius:var(--r-md);display:flex;align-items:center;justify-content:center;font-size:1.3rem;flex-shrink:0">
+        {% if req.status == 'active' %}🟢{% elif req.status == 'paid' %}✅{% elif req.status == 'expired' %}⏰{% else %}🔴{% endif %}
+      </div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:.88rem;font-weight:600;color:var(--ink)">
+          {% if req.amount %}KES {{ req.amount|floatformat:2 }}{% else %}Open amount{% endif %}
+        </div>
+        <div style="font-size:.72rem;color:var(--ink-4);margin-top:1px">
+          {{ req.note|default:"No description" }} · <span class="badge {% if req.status == 'active' %}bg-green{% elif req.status == 'paid' %}bg-teal{% elif req.status == 'expired' %}bg-gray{% else %}bg-red{% endif %}">{{ req.status }}</span>
+        </div>
+        <div style="font-size:.68rem;color:var(--ink-4);margin-top:2px">Created {{ req.created_at|date:"d M Y" }}</div>
+      </div>
+      <a href="{% url 'qr_payment_detail' req.token %}" class="btn btn-ghost btn-sm">View</a>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty">
+    <div class="empty-icon">📲</div>
+    <p>No QR payment links yet.<br>Create one to accept payments.</p>
+    <a href="{% url 'qr_payment_create' %}" class="btn btn-primary btn-sm" style="margin-top:.75rem">Create QR Link</a>
+  </div>
+  {% endif %}
 </div>
 {% endblock %}

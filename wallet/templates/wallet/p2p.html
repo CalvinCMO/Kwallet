@@ -1,66 +1,112 @@
 {% extends "wallet/base.html" %}
-{% block title %}Transfer — KWallet{% endblock %}
+{% block title %}Send Money — KWallet{% endblock %}
 {% block content %}
-<div class="app-shell">
-  <div class="app-scroll">
-    <div class="home-header" style="padding-bottom:8px">
-      <div>
-        <div class="home-greeting">Send to anyone</div>
-        <div class="home-name">P2P Transfer</div>
-      </div>
-    </div>
+<div class="page-sm">
 
-    {% if messages %}
-    <div style="padding:0 16px 8px">
-      <div class="msgs">{% for m in messages %}<div class="msg msg-{{ m.tags }}">{{ m }}</div>{% endfor %}</div>
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem">
+    <div>
+      <div style="font-size:.72rem;color:var(--ink-3);margin-bottom:2px">Wallet to wallet</div>
+      <h1 style="font-size:1.5rem;font-weight:800;color:var(--ink);letter-spacing:-.03em">Send Money</h1>
     </div>
-    {% endif %}
+    <a href="{% url 'dashboard' %}" class="back-btn">← Back</a>
+  </div>
 
-    <div style="padding:0 16px">
-      <div class="fee-box">💡 <strong>0.5% fee</strong> — deducted on top of the sent amount. Min KES 5 equivalent.</div>
-      <div class="card">
-        <div class="ibox" style="margin-bottom:1rem">📱 Transfers go to any KWallet user by phone number and settle instantly.</div>
-        <form method="post">
-          {% csrf_token %}
-          <div class="fg">
-            <label class="fl">Recipient Phone</label>
-            <input class="fi" type="tel" name="recipient_phone" placeholder="0712 345 678" required>
-            {% for e in form.recipient_phone.errors %}<div class="fe">{{ e }}</div>{% endfor %}
-          </div>
-          <div class="fg2">
-            <div class="fg">
-              <label class="fl">Currency</label>
-              <select class="fs" name="currency" id="txCurr" onchange="updateFee()">
-                {% for val, label in form.currency.field.choices %}<option value="{{ val }}">{{ label }}</option>{% endfor %}
-              </select>
-            </div>
-            <div class="fg">
-              <label class="fl">Amount</label>
-              <input class="fi" type="number" name="amount" id="txAmt" step="0.0001" min="0.01" placeholder="0.00" required oninput="updateFee()">
-              {% for e in form.amount.errors %}<div class="fe">{{ e }}</div>{% endfor %}
-            </div>
-          </div>
-          <div id="feeBox" style="display:none" class="prev">
-            <div class="prev-main" id="feeMain"></div>
-            <div class="prev-fee"  id="feeLine"></div>
-          </div>
-          <button type="submit" class="btn btn-primary btn-block" style="border-radius:var(--r-md);padding:.8rem">Send →</button>
-        </form>
-      </div>
+  {% if messages %}
+  <div class="msgs">{% for m in messages %}<div class="msg msg-{{ m.tags }}">{{ m }}</div>{% endfor %}</div>
+  {% endif %}
+
+  {# Risk #15: KYC check #}
+  {% if wallet.kyc_status != 'verified' %}
+  <div class="kyc-full-block" style="margin-bottom:1.25rem">
+    <div class="kyc-full-block-icon">🔒</div>
+    <div>
+      <strong>KYC required for transfers</strong>
+      <p>Verify your identity to send money to other wallets.</p>
+      <a href="{% url 'kyc_start' %}" class="btn btn-gold btn-sm" style="margin-top:10px;display:inline-flex">Verify now →</a>
     </div>
   </div>
+  {% endif %}
+
+  <div class="card">
+    <form method="post">
+      {% csrf_token %}
+      <div class="fg">
+        <label class="fl">Recipient Phone Number</label>
+        <input class="fi" type="tel" name="recipient_phone" placeholder="07XX XXX XXX" required
+               {% if wallet.kyc_status != 'verified' %}disabled{% endif %}>
+        {# Risk #06: we only ask for phone, never display full name in history #}
+        <div class="fh">The recipient must be a registered KWallet user</div>
+        {% if form.recipient_phone.errors %}<div class="fe">{{ form.recipient_phone.errors|join:", " }}</div>{% endif %}
+      </div>
+      <div class="fg">
+        <label class="fl">Currency</label>
+        <select class="fs" name="currency" id="p2pCurr" onchange="updateFee()" {% if wallet.kyc_status != 'verified' %}disabled{% endif %}>
+          {% for cb in balances %}
+          <option value="{{ cb.currency }}">{{ cb.currency }} — {{ cb.balance|floatformat:2 }} available</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="fg">
+        <label class="fl">Amount</label>
+        <input class="fi" type="number" name="amount" id="p2pAmt" step="any" min="1"
+               placeholder="0.00" oninput="updateFee()" {% if wallet.kyc_status != 'verified' %}disabled{% endif %}>
+        {% if form.amount.errors %}<div class="fe">{{ form.amount.errors|join:", " }}</div>{% endif %}
+      </div>
+      <div class="fee-preview" id="p2pFeeBox" style="display:none">
+        <div class="fee-row"><span class="fee-label">Amount sent</span><span class="fee-val" id="p2pAmtDisp">—</span></div>
+        <div class="fee-row"><span class="fee-label">P2P fee</span><span class="fee-val" id="p2pFeeDisp">—</span></div>
+        <div class="fee-divider"></div>
+        <div class="fee-row"><span class="fee-total-label">Total deducted</span><span class="fee-total-val" id="p2pTotalDisp">—</span></div>
+      </div>
+      <div class="fg">
+        <label class="fl">Note <span class="field-hint">(optional)</span></label>
+        <input class="fi" type="text" name="note" maxlength="80" placeholder="e.g. Rent contribution"
+               {% if wallet.kyc_status != 'verified' %}disabled{% endif %}>
+      </div>
+
+      {# AML limit bar (Risk #16) #}
+      <div class="limit-bar-wrap" style="margin-bottom:.85rem">
+        <div class="limit-bar-label">
+          <span>Daily limit used</span>
+          <span>{{ home_currency }} {{ daily_withdrawn|floatformat:0 }} / {{ daily_limit|floatformat:0 }}</span>
+        </div>
+        <div class="limit-bar-track">
+          <div class="limit-bar-fill {% if daily_pct >= 85 %}lb-red{% elif daily_pct >= 50 %}lb-yellow{% else %}lb-green{% endif %}"
+               style="width:{{ daily_pct }}%"></div>
+        </div>
+      </div>
+
+      <div class="security-notice">
+        <svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        Recipient details are masked in your transaction history. Only a phone prefix is stored (Risk #06).
+      </div>
+
+      <button type="submit" class="btn btn-primary btn-block" {% if wallet.kyc_status != 'verified' %}disabled{% endif %}>Send →</button>
+    </form>
+  </div>
 </div>
+
 <script>
-function updateFee(){
-  const amt=parseFloat(document.getElementById('txAmt').value);
-  const curr=document.getElementById('txCurr').value;
-  const el=document.getElementById('feeBox');
-  if(!amt||amt<=0){el.style.display='none';return;}
-  const fee=Math.max(amt*.005,5);
-  const total=(amt+fee).toFixed(4);
-  el.style.display='block';
-  document.getElementById('feeMain').textContent=`Send: ${amt.toFixed(4)} ${curr}`;
-  document.getElementById('feeLine').textContent=`Fee: ${fee.toFixed(4)} ${curr} (0.5%)  ·  Total deducted: ${total} ${curr}`;
+// P2P send brackets matching models.py SEND_BRACKETS
+const SEND_BRACKETS = [
+  [1,100,0],[101,500,7],[501,1000,13],[1001,1500,23],[1501,2500,33],
+  [2501,3500,53],[3501,5000,57],[5001,7500,78],[7501,10000,90],
+  [10001,15000,100],[15001,20000,105],[20001,35000,108],[35001,250000,108]
+];
+function getSendFee(amt) {
+  for (const [mn,mx,fee] of SEND_BRACKETS) { if (amt >= mn && amt <= mx) return fee; }
+  return 108;
+}
+function updateFee() {
+  const amt = parseFloat(document.getElementById('p2pAmt').value);
+  const curr = document.getElementById('p2pCurr').value;
+  const box = document.getElementById('p2pFeeBox');
+  if (!amt || amt < 1) { box.style.display='none'; return; }
+  const fee = curr === 'KES' ? getSendFee(amt) : 0;
+  box.style.display = 'block';
+  document.getElementById('p2pAmtDisp').textContent  = curr + ' ' + amt.toFixed(2);
+  document.getElementById('p2pFeeDisp').textContent  = curr + ' ' + fee.toFixed(2);
+  document.getElementById('p2pTotalDisp').textContent= curr + ' ' + (amt + fee).toFixed(2);
 }
 </script>
 {% endblock %}
