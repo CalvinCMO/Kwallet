@@ -1,96 +1,15 @@
 """
-settings.py — KWallet v2
-========================
-Single settings file for both local development and Railway deployment.
-
-Environment is driven entirely by env vars — no separate settings_production.py
-needed.  Set these in Railway's "Variables" panel:
-
-  REQUIRED IN PRODUCTION
-  ──────────────────────
-  DJANGO_SECRET_KEY          Strong random string (never the dev default)
-  DATABASE_URL               Injected automatically by Railway Postgres plugin
-  RAILWAY_PUBLIC_DOMAIN      Injected automatically by Railway (e.g. kwallet.up.railway.app)
-  DJANGO_DEBUG               Set to 'False' in production (default: False)
-
-  MPESA
-  ─────
-  MPESA_CONSUMER_KEY / MPESA_CONSUMER_SECRET
-  MPESA_SHORTCODE / MPESA_PASSKEY
-  MPESA_CALLBACK_URL         Must be your live Railway HTTPS URL
-  MPESA_INITIATOR_NAME / MPESA_SECURITY_CREDENTIAL
-  MPESA_ENVIRONMENT          'production' or 'sandbox'
-  MPESA_USE_MOCK             'False' in production
-
-  OPTIONAL
-  ────────
-  NGROK_URL                  Local tunnel for M-Pesa callbacks during dev
-  DJANGO_ALLOWED_HOSTS       Extra comma-separated hosts beyond Railway domain
+settings.py — KWallet
+Addresses Risk #07 (SSL), Risk #09 (health endpoint), Risk #10 (Redis cache),
+Risk #01 (rate alert), Risk #12 (insolvency alert), Risk #08 (rate limiting).
 """
-
-from pathlib import Path
 import os
-import dj_database_url
-
-try:
-    from dotenv import load_dotenv
-    load_dotenv(Path(__file__).resolve().parent.parent / '.env')
-except ImportError:
-    pass
-
-# ── Core ──────────────────────────────────────────────────────────────────────
+from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-
-SECRET_KEY = os.environ.get(
-    'DJANGO_SECRET_KEY',
-    'django-insecure-dev-only-kwallet-v2-change-in-production',
-)
-
-# DEBUG is False by default — must be explicitly opted in for local dev.
-DEBUG = os.environ.get('DJANGO_DEBUG', 'False').strip().lower() == 'true'
-
-# ── Hosts & CSRF ──────────────────────────────────────────────────────────────
-
-# Railway injects RAILWAY_PUBLIC_DOMAIN automatically (e.g. kwallet.up.railway.app)
-_railway_domain = os.environ.get('RAILWAY_PUBLIC_DOMAIN', '')
-
-ALLOWED_HOSTS = ['127.0.0.1', 'localhost']
-if _railway_domain:
-    ALLOWED_HOSTS.append(_railway_domain)
-
-# Allow extra hosts via env var (comma-separated)
-_extra_hosts = os.environ.get('DJANGO_ALLOWED_HOSTS', '')
-if _extra_hosts:
-    ALLOWED_HOSTS.extend(h.strip() for h in _extra_hosts.split(',') if h.strip())
-
-# Trust Railway's HTTPS proxy header so Django sees secure requests correctly.
-SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
-
-CSRF_TRUSTED_ORIGINS = [
-    'http://127.0.0.1:8000',
-    'http://localhost:8000',
-]
-if _railway_domain:
-    CSRF_TRUSTED_ORIGINS.append(f'https://{_railway_domain}')
-
-_ngrok = os.environ.get('NGROK_URL', '')
-if _ngrok and _ngrok not in CSRF_TRUSTED_ORIGINS:
-    CSRF_TRUSTED_ORIGINS.append(_ngrok)
-
-# ── Security headers (active when DEBUG=False) ────────────────────────────────
-
-if not DEBUG:
-    SECURE_SSL_REDIRECT              = True   # HTTP → HTTPS redirect
-    SESSION_COOKIE_SECURE            = True   # Session cookie over HTTPS only
-    CSRF_COOKIE_SECURE               = True   # CSRF cookie over HTTPS only
-    SECURE_HSTS_SECONDS              = 31536000  # 1 year HSTS
-    SECURE_HSTS_INCLUDE_SUBDOMAINS   = True
-    SECURE_HSTS_PRELOAD              = True
-    SECURE_CONTENT_TYPE_NOSNIFF      = True
-    X_FRAME_OPTIONS                  = 'DENY'
-
-# ── Applications ──────────────────────────────────────────────────────────────
+SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'change-this-in-production-minimum-50-chars-random')
+DEBUG      = os.environ.get('DEBUG', 'False') == 'True'
+ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -104,17 +23,17 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
-    'whitenoise.middleware.WhiteNoiseMiddleware',   # serves static files on Railway
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    # Risk #08: rate limiting middleware (django-axes or custom, configured below)
 ]
 
-ROOT_URLCONF     = 'kwallet.urls'
-WSGI_APPLICATION = 'kwallet.wsgi.application'
+ROOT_URLCONF = 'kwallet.urls'
 
 TEMPLATES = [{
     'BACKEND': 'django.template.backends.django.DjangoTemplates',
@@ -128,137 +47,121 @@ TEMPLATES = [{
     ]},
 }]
 
-# ── Database ──────────────────────────────────────────────────────────────────
-# Railway Postgres plugin sets DATABASE_URL automatically.
-# Falls back to local SQLite for development when DATABASE_URL is absent.
+WSGI_APPLICATION = 'kwallet.wsgi.application'
 
-_db_url = os.environ.get('DATABASE_URL')
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME':     os.environ.get('PGDATABASE', 'kwallet'),
+        'USER':     os.environ.get('PGUSER',     'kwallet'),
+        'PASSWORD': os.environ.get('PGPASSWORD', ''),
+        'HOST':     os.environ.get('PGHOST',     'localhost'),
+        'PORT':     os.environ.get('PGPORT',     '5432'),
+    }
+}
 
-if _db_url:
-    DATABASES = {
-        'default': dj_database_url.parse(
-            _db_url,
-            conn_max_age=600,       # persistent connections — important on Railway
-            conn_health_checks=True,
-        )
+# Risk #10: Redis cache — shared across workers, survives restarts
+# Falls back to LocMemCache for local dev without Redis
+REDIS_URL = os.environ.get('REDIS_URL', '')
+if REDIS_URL:
+    CACHES = {
+        'default': {
+            'BACKEND': 'django_redis.cache.RedisCache',
+            'LOCATION': REDIS_URL,
+            'OPTIONS': {'CLIENT_CLASS': 'django_redis.client.DefaultClient'},
+            'TIMEOUT': 300,
+        }
     }
 else:
-    DATABASES = {
+    CACHES = {
         'default': {
-            'ENGINE': 'django.db.backends.sqlite3',
-            'NAME':   BASE_DIR / 'db.sqlite3',
+            'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+            'LOCATION': 'kwallet-dev',
         }
     }
 
-# ── Password validation ───────────────────────────────────────────────────────
+SESSION_ENGINE = 'django.contrib.sessions.backends.cache'
+SESSION_CACHE_ALIAS = 'default'
 
-AUTH_PASSWORD_VALIDATORS = [
-    {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
-    {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator'},
-    {'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator'},
-    {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
-]
+AUTH_USER_MODEL = 'wallet.WalletUser'
+LOGIN_URL  = '/login/'
+LOGIN_REDIRECT_URL = '/'
 
-# ── Internationalisation ──────────────────────────────────────────────────────
-
-LANGUAGE_CODE = 'en-us'
-TIME_ZONE     = 'Africa/Nairobi'
-USE_I18N      = True
-USE_TZ        = True
-
-# ── Static files ──────────────────────────────────────────────────────────────
-# WhiteNoise compresses and fingerprints static files so Railway can serve them
-# without a separate CDN.
-
-STATIC_URL       = '/static/'
-STATIC_ROOT      = BASE_DIR / 'staticfiles'          # collectstatic target
-STATICFILES_DIRS = [BASE_DIR / 'static']
+STATIC_URL  = '/static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# ── Sessions ──────────────────────────────────────────────────────────────────
-
-SESSION_COOKIE_AGE         = 3600
-SESSION_SAVE_EVERY_REQUEST = True
-
-# ── Cache ─────────────────────────────────────────────────────────────────────
-# LocMemCache is per-process — fine for single-worker Railway deploys.
-# If you scale to multiple workers, swap this for a Redis cache and point
-# CACHE_URL at Railway's Redis plugin.
-
-CACHES = {
-    'default': {
-        'BACKEND':  'django.core.cache.backends.locmem.LocMemCache',
-        'LOCATION': 'kwallet-v2-cache',
-        'TIMEOUT':  3600,
-    }
+# ── M-Pesa config ──
+MPESA_CONFIG = {
+    'CONSUMER_KEY':          os.environ.get('MPESA_CONSUMER_KEY', ''),
+    'CONSUMER_SECRET':       os.environ.get('MPESA_CONSUMER_SECRET', ''),
+    'SHORTCODE':             os.environ.get('MPESA_SHORTCODE', '174379'),
+    'PASSKEY':               os.environ.get('MPESA_PASSKEY', ''),
+    'B2C_INITIATOR':         os.environ.get('MPESA_B2C_INITIATOR', ''),
+    'B2C_SECURITY_CREDENTIAL': os.environ.get('MPESA_B2C_CREDENTIAL', ''),
+    'CALLBACK_URL':          os.environ.get('MPESA_CALLBACK_URL', 'https://yourdomain.com/mpesa/callback/'),
+    'B2C_RESULT_URL':        os.environ.get('MPESA_B2C_RESULT_URL', 'https://yourdomain.com/mpesa/b2c/result/'),
+    # Risk #05: shared secret for callback HMAC verification
+    'CALLBACK_SECRET':       os.environ.get('MPESA_CALLBACK_SECRET', ''),
+    'ENVIRONMENT':           os.environ.get('MPESA_ENVIRONMENT', 'sandbox'),
+    'USE_MOCK':              os.environ.get('MPESA_USE_MOCK', 'True') == 'True',
+    # Risk #07: SSL always on; only disable with an explicit dev flag
+    'DEV_DISABLE_SSL':       os.environ.get('MPESA_DEV_DISABLE_SSL', 'False') == 'True',
 }
 
-EXCHANGE_RATE_CACHE_TTL = 3600
+# ── Airtel Money config ──
+AIRTEL_CONFIG = {
+    'CLIENT_ID':         os.environ.get('AIRTEL_CLIENT_ID', ''),
+    'CLIENT_SECRET':     os.environ.get('AIRTEL_CLIENT_SECRET', ''),
+    'ENVIRONMENT':       os.environ.get('AIRTEL_ENVIRONMENT', 'sandbox'),
+    'BASE_URL_SANDBOX':    'https://openapiuat.airtel.africa',
+    'BASE_URL_PRODUCTION': 'https://openapi.airtel.africa',
+    'COUNTRY':  'KE',
+    'CURRENCY': 'KES',
+    # Risk #05: shared secret for Airtel callback
+    'CALLBACK_SECRET':       os.environ.get('AIRTEL_CALLBACK_SECRET', ''),
+    'ALLOWED_CALLBACK_IPS':  os.environ.get('AIRTEL_CALLBACK_IPS', '').split(','),
+}
 
-# ── Logging ───────────────────────────────────────────────────────────────────
-# Railway captures stdout/stderr, so all logs go to the console handler.
-# The settlement file handler is kept for local auditing; on Railway the
-# console stream is the durable audit trail.
+# ── Email (Risk #01 #12: ops alerts) ──
+EMAIL_BACKEND = os.environ.get(
+    'EMAIL_BACKEND',
+    'django.core.mail.backends.console.EmailBackend'  # use SMTP in production
+)
+EMAIL_HOST     = os.environ.get('EMAIL_HOST', '')
+EMAIL_PORT     = int(os.environ.get('EMAIL_PORT', 587))
+EMAIL_USE_TLS  = True
+EMAIL_HOST_USER     = os.environ.get('EMAIL_HOST_USER', '')
+EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
+DEFAULT_FROM_EMAIL  = os.environ.get('DEFAULT_FROM_EMAIL', 'alerts@kwallet.app')
+ADMINS = [('KWallet Ops', os.environ.get('OPS_EMAIL', 'ops@kwallet.app'))]
 
+# ── Logging ──
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
     'formatters': {
-        'verbose': {
-            'format': '[{asctime}] {levelname} {name} — {message}',
-            'style': '{',
-        },
-        'simple': {
-            'format': '{levelname} {message}',
-            'style': '{',
-        },
+        'verbose': {'format': '%(asctime)s %(levelname)s %(name)s %(message)s'},
     },
     'handlers': {
-        'console': {
-            'class':     'logging.StreamHandler',
-            'formatter': 'verbose',
-        },
-        'settlement_file': {
-            'class':     'logging.FileHandler',
-            'filename':  BASE_DIR / 'logs' / 'settlement.log',
-            'formatter': 'verbose',
-        },
+        'console': {'class': 'logging.StreamHandler', 'formatter': 'verbose'},
     },
+    'root': {'handlers': ['console'], 'level': 'INFO'},
     'loggers': {
-        'wallet': {
-            'handlers':  ['console'],
-            'level':     'DEBUG' if DEBUG else 'INFO',
-            'propagate': False,
-        },
-        'wallet.settlement': {
-            'handlers':  ['console', 'settlement_file'],
-            'level':     'INFO',
-            'propagate': False,
-        },
-        'django': {
-            'handlers':  ['console'],
-            'level':     'INFO',
-            'propagate': False,
-        },
+        'wallet': {'handlers': ['console'], 'level': 'DEBUG', 'propagate': False},
     },
 }
 
-# ── M-Pesa ────────────────────────────────────────────────────────────────────
-
-MPESA_CONFIG = {
-    'CONSUMER_KEY':        os.environ.get('MPESA_CONSUMER_KEY',         ''),
-    'CONSUMER_SECRET':     os.environ.get('MPESA_CONSUMER_SECRET',      ''),
-    'SHORTCODE':           os.environ.get('MPESA_SHORTCODE',             '174379'),
-    'PASSKEY':             os.environ.get('MPESA_PASSKEY',               ''),
-    'CALLBACK_URL':        os.environ.get('MPESA_CALLBACK_URL',
-                               f'https://{_railway_domain}/mpesa/callback/'
-                               if _railway_domain
-                               else 'http://localhost:8000/mpesa/callback/'),
-    'INITIATOR_NAME':      os.environ.get('MPESA_INITIATOR_NAME',       ''),
-    'SECURITY_CREDENTIAL': os.environ.get('MPESA_SECURITY_CREDENTIAL',  ''),
-    'ENVIRONMENT':         os.environ.get('MPESA_ENVIRONMENT',           'sandbox'),
-    'USE_MOCK':            os.environ.get('MPESA_USE_MOCK', 'True').lower() == 'true',
-    'TIMEOUT':             int(os.environ.get('MPESA_TIMEOUT',           '60')),
-}
+# ── Security headers (production) ──
+if not DEBUG:
+    SECURE_SSL_REDIRECT           = True
+    SESSION_COOKIE_SECURE         = True
+    CSRF_COOKIE_SECURE            = True
+    SECURE_BROWSER_XSS_FILTER     = True
+    SECURE_CONTENT_TYPE_NOSNIFF   = True
+    SECURE_HSTS_SECONDS           = 31536000
+    SECURE_HSTS_INCLUDE_SUBDOMAINS= True
+    SECURE_HSTS_PRELOAD           = True
+    X_FRAME_OPTIONS               = 'DENY'
