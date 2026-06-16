@@ -4,187 +4,169 @@ from django.utils.html import format_html
 from decimal import Decimal
 
 from .models import (
-    Wallet, CurrencyBalance, Transaction, MpesaTransaction,
-    FeeRecord, PaymentMethod, WalletLimit,
-    CompanyAccount, PoolLedger, FeeSettlement,
+    WalletUser,
+    Wallet,
+    CurrencyBalance,
+    Transaction,
+    MpesaTransaction,
+    AirtelTransaction,
+    BankTransaction,
+    WalletLimit,
+    CompanyAccount,
+    PoolLedger,
+    QRPaymentRequest,
+    SuspiciousActivityFlag,
+    PinResetToken,
 )
 
 
-# ── Wallet ────────────────────────────────────────────────────────────[...]
+# ── WalletUser ───────────────────────────────────────────────────────────
+
+@admin.register(WalletUser)
+class WalletUserAdmin(admin.ModelAdmin):
+    list_display  = ('phone', 'first_name', 'last_name', 'is_active',
+                     'failed_login_attempts', 'locked_until', 'date_joined')
+    list_filter   = ('is_active', 'is_staff')
+    search_fields = ('phone', 'first_name', 'last_name')
+    readonly_fields = ('date_joined', 'failed_login_attempts', 'locked_until', 'password')
+    fieldsets = (
+        ('Identity', {'fields': ('phone', 'first_name', 'last_name')}),
+        ('Permissions', {'fields': ('is_active', 'is_staff', 'is_superuser')}),
+        ('Security (read-only)', {
+            'fields': ('password', 'failed_login_attempts', 'locked_until', 'date_joined'),
+            'description': 'PIN is stored as bcrypt+pepper hash — never editable here.',
+        }),
+    )
+
+    def has_delete_permission(self, request, obj=None):
+        # Prevent accidental user deletion — use is_active=False instead
+        return request.user.is_superuser
+
+
+# ── Wallet ───────────────────────────────────────────────────────────────
 
 @admin.register(Wallet)
 class WalletAdmin(admin.ModelAdmin):
-    list_display  = ('wallet_id', 'user', 'phone', 'country', 'kyc_status', 'created_at')
-    list_filter   = ('country', 'kyc_status')
+    list_display  = ('wallet_id', 'user', 'phone', 'home_currency',
+                     'kyc_status_badge', 'kes_balance_display', 'created_at')
+    list_filter   = ('kyc_status', 'home_currency')
     search_fields = ('phone', 'wallet_id', 'user__first_name', 'user__last_name')
-    readonly_fields = ('wallet_id', 'created_at')
+    readonly_fields = ('wallet_id', 'created_at', 'updated_at', 'kyc_verified_at')
+
+    @admin.display(description='KYC')
+    def kyc_status_badge(self, obj):
+        colours = {'verified': 'green', 'pending': 'orange', 'rejected': 'red'}
+        icons   = {'verified': '✅', 'pending': '⏳', 'rejected': '❌'}
+        c = colours.get(obj.kyc_status, 'grey')
+        i = icons.get(obj.kyc_status, '?')
+        return format_html('<span style="color:{};font-weight:600">{} {}</span>',
+                           c, i, obj.kyc_status.title())
+
+    @admin.display(description='KES Balance')
+    def kes_balance_display(self, obj):
+        bal = obj.get_kes_balance()
+        return f'KES {bal:,.2f}'
 
 
-# ── CurrencyBalance ─────────────────────────────────────────────────────────[...]
+# ── CurrencyBalance ──────────────────────────────────────────────────────
 
 @admin.register(CurrencyBalance)
 class CurrencyBalanceAdmin(admin.ModelAdmin):
-    readonly_fields = ('wallet', 'currency', 'balance', 'last_updated')
-    list_display = ('wallet', 'currency', 'balance', 'last_updated')
-    list_filter  = ('currency',)
-    search_fields = ('wallet__phone',)
+    list_display  = ('wallet', 'currency', 'balance', 'added_at')
+    list_filter   = ('currency',)
+    search_fields = ('wallet__phone', 'wallet__wallet_id')
+    readonly_fields = ('wallet', 'currency', 'added_at')
 
 
 # ── Transaction ──────────────────────────────────────────────────────────
 
 @admin.register(Transaction)
 class TransactionAdmin(admin.ModelAdmin):
-    list_display  = ('reference', 'wallet', 'transaction_type', 'currency',
-                     'amount', 'fee', 'status', 'created_at')
+    list_display  = ('id', 'wallet', 'transaction_type', 'currency',
+                     'amount', 'fee', 'status_badge', 'created_at')
     list_filter   = ('transaction_type', 'currency', 'status')
-    search_fields = ('wallet__phone', 'reference')
-    readonly_fields = ('reference', 'created_at', 'updated_at')
+    search_fields = ('wallet__phone', 'wallet__wallet_id', 'external_ref', 'idempotency_key')
+    readonly_fields = ('created_at', 'updated_at', 'idempotency_key', 'external_ref')
+    ordering = ('-created_at',)
+
+    @admin.display(description='Status')
+    def status_badge(self, obj):
+        colours = {'completed': 'green', 'pending': 'orange',
+                   'failed': 'red', 'refunded': 'blue'}
+        c = colours.get(obj.status, 'grey')
+        return format_html('<span style="color:{};font-weight:600">{}</span>',
+                           c, obj.status.title())
 
 
-# ── FeeRecord ───────────────────────────────────────────────────────────[...]
-
-@admin.register(FeeRecord)
-class FeeRecordAdmin(admin.ModelAdmin):
-    list_display  = ('wallet', 'amount', 'currency', 'fee_type',
-                     'settlement_status', 'collected_at')
-    list_filter   = ('fee_type', 'currency')
-    search_fields = ('wallet__phone',)
-    readonly_fields = ('collected_at',)
-
-    @admin.display(description='Settled?')
-    def settlement_status(self, obj):
-        if obj.settlement:
-            return format_html(
-                '<span style="color:green">✅ {}</span>',
-                obj.settlement.reference,
-            )
-        return format_html('<span style="color:orange">⏳ Unsettled</span>')
-
-
-# ── MpesaTransaction ────────────────────────────────────────────────────────
+# ── MpesaTransaction ─────────────────────────────────────────────────────
 
 @admin.register(MpesaTransaction)
 class MpesaTransactionAdmin(admin.ModelAdmin):
-    list_display  = ('wallet', 'phone', 'amount', 'direction',
-                     'status', 'mpesa_receipt', 'created_at')
-    list_filter   = ('direction', 'status')
-    search_fields = ('phone', 'mpesa_receipt', 'checkout_request_id')
-    readonly_fields = ('created_at', 'updated_at')
+    list_display  = ('wallet', 'phone', 'amount', 'transaction_type',
+                     'status', 'mpesa_receipt', 'timeout_at', 'created_at')
+    list_filter   = ('transaction_type', 'status')
+    search_fields = ('phone', 'mpesa_receipt', 'checkout_request_id', 'wallet__phone')
+    readonly_fields = ('created_at', 'updated_at', 'checkout_request_id',
+                       'merchant_request_id', 'mpesa_receipt', 'timeout_at')
+    ordering = ('-created_at',)
+
+    def has_add_permission(self, request):
+        return False  # Created programmatically only
 
 
-# ── PaymentMethod ────────────────────────────────────────────────────────
+# ── AirtelTransaction ────────────────────────────────────────────────────
 
-@admin.register(PaymentMethod)
-class PaymentMethodAdmin(admin.ModelAdmin):
-    list_display  = ('wallet', 'rail', 'label', 'identifier',
-                     'currency', 'is_verified', 'is_default')
-    list_filter   = ('rail', 'country', 'is_verified')
-    search_fields = ('wallet__phone', 'identifier')
+@admin.register(AirtelTransaction)
+class AirtelTransactionAdmin(admin.ModelAdmin):
+    list_display  = ('wallet', 'phone', 'amount', 'transaction_type',
+                     'status', 'airtel_ref', 'timeout_at', 'created_at')
+    list_filter   = ('transaction_type', 'status')
+    search_fields = ('phone', 'airtel_ref', 'wallet__phone')
+    readonly_fields = ('created_at', 'updated_at', 'airtel_ref', 'timeout_at')
+    ordering = ('-created_at',)
+
+    def has_add_permission(self, request):
+        return False
+
+
+# ── BankTransaction ──────────────────────────────────────────────────────
+
+@admin.register(BankTransaction)
+class BankTransactionAdmin(admin.ModelAdmin):
+    list_display  = ('wallet', 'bank_name', 'account_name', 'amount',
+                     'transaction_type', 'status', 'pesalink_ref',
+                     'timeout_at', 'created_at')
+    list_filter   = ('transaction_type', 'status', 'bank_name')
+    search_fields = ('wallet__phone', 'pesalink_ref', 'account_number', 'account_name')
+    readonly_fields = ('created_at', 'updated_at', 'pesalink_ref', 'timeout_at')
+    ordering = ('-created_at',)
 
 
 # ── WalletLimit ──────────────────────────────────────────────────────────
 
 @admin.register(WalletLimit)
 class WalletLimitAdmin(admin.ModelAdmin):
-    list_display  = ('wallet', 'per_transaction_limit_usd',
-                     'base_daily_limit_usd', 'daily_limit_increment_usd',
-                     'effective_daily_limit', 'created_at')
-    search_fields = ('wallet__phone',)
-    readonly_fields = ('created_at', 'updated_at')
-
-    @admin.display(description='Effective Daily Limit (USD)')
-    def effective_daily_limit(self, obj):
-        return f"${obj.effective_daily_limit_usd}"
+    list_display  = ('wallet', 'daily_withdraw_kes',
+                     'per_txn_max_kes', 'monthly_limit_kes')
+    search_fields = ('wallet__phone', 'wallet__wallet_id')
 
 
-# ── CompanyAccount ────────────────────────────────────────────────────────
+# ── CompanyAccount ───────────────────────────────────────────────────────
 
 @admin.register(CompanyAccount)
 class CompanyAccountAdmin(admin.ModelAdmin):
-    list_display  = ('name', 'account_type', 'rail', 'currency',
-                     'identifier', 'ledger_balance', 'solvency_badge',
-                     'user_liability_display', 'surplus_display', 'is_active')
-    list_filter   = ('account_type', 'currency', 'rail', 'is_active')
-    search_fields = ('name', 'identifier')
-    readonly_fields = ('ledger_balance', 'created_at', 'updated_at',
-                       'solvency_badge', 'user_liability_display', 'surplus_display')
-
-    fieldsets = (
-        ('Account Details', {
-            'fields': ('name', 'account_type', 'rail', 'currency',
-                       'identifier', 'is_active', 'notes'),
-        }),
-        ('Balances (read-only)', {
-            'fields': ('ledger_balance', 'user_liability_display',
-                       'surplus_display', 'solvency_badge'),
-            'description': (
-                'ledger_balance is updated automatically by the settlement engine. '
-                'Do not edit directly unless performing a manual reconciliation adjustment.'
-            ),
-        }),
-        ('Timestamps', {
-            'fields': ('created_at', 'updated_at'),
-            'classes': ('collapse',),
-        }),
-    )
+    list_display  = ('currency', 'balance', 'solvency_badge', 'updated_at')
+    readonly_fields = ('updated_at',)
 
     @admin.display(description='Solvency')
     def solvency_badge(self, obj):
-        if obj.account_type != 'client_float':
-            return '—'
         if obj.is_solvent:
-            return format_html('<span style="color:green;font-weight:bold">✅ SOLVENT</span>')
-        return format_html('<span style="color:red;font-weight:bold">🔴 INSOLVENT</span>')
-
-    @admin.display(description='User Liability')
-    def user_liability_display(self, obj):
-        if obj.account_type != 'client_float':
-            return '—'
-        return f"{obj.total_user_liability:.4f} {obj.currency}"
-
-    @admin.display(description='Surplus')
-    def surplus_display(self, obj):
-        if obj.account_type != 'client_float':
-            return '—'
-        s = obj.surplus
-        color = 'green' if s >= 0 else 'red'
+            return format_html(
+                '<span style="color:green;font-weight:bold">✅ SOLVENT</span>'
+            )
         return format_html(
-            '<span style="color:{}">{:.4f} {}</span>', color, s, obj.currency
-        )
-
-
-# ── FeeSettlement ────────────────────────────────────────────────────────
-
-@admin.register(FeeSettlement)
-class FeeSettlementAdmin(admin.ModelAdmin):
-    list_display  = ('reference', 'currency', 'total_fees', 'fee_count',
-                     'from_account', 'to_account', 'status_badge',
-                     'initiated_by', 'created_at', 'completed_at')
-    list_filter   = ('status', 'currency')
-    search_fields = ('reference', 'initiated_by')
-    readonly_fields = ('reference', 'created_at', 'completed_at',
-                       'total_fees', 'fee_count', 'status_badge')
-
-    # Settlements should never be edited after creation — they are immutable
-    # accounting records. Allow viewing only.
-    def has_change_permission(self, request, obj=None):
-        if obj and obj.status == 'completed':
-            return False
-        return super().has_change_permission(request, obj)
-
-    @admin.display(description='Status')
-    def status_badge(self, obj):
-        colors = {
-            'completed': 'green',
-            'pending':   'orange',
-            'failed':    'red',
-        }
-        icons = {'completed': '✅', 'pending': '⏳', 'failed': '❌'}
-        color = colors.get(obj.status, 'grey')
-        icon   = icons.get(obj.status, '?')
-        return format_html(
-            '<span style="color:{};font-weight:bold">{} {}</span>',
-            color, icon, obj.get_status_display(),
+            '<span style="color:red;font-weight:bold">🔴 INSOLVENT — KES {:,.2f}</span>',
+            obj.balance
         )
 
 
@@ -192,17 +174,12 @@ class FeeSettlementAdmin(admin.ModelAdmin):
 
 @admin.register(PoolLedger)
 class PoolLedgerAdmin(admin.ModelAdmin):
-    list_display  = ('created_at', 'account', 'entry_type', 'currency',
-                     'amount', 'balance_after', 'created_by',
-                     'linked_transaction', 'linked_settlement')
-    list_filter   = ('entry_type', 'currency', 'account')
-    search_fields = ('account__name', 'note', 'created_by')
-    readonly_fields = ('created_at', 'account', 'entry_type', 'amount',
-                       'currency', 'balance_after', 'transaction',
-                       'settlement', 'note', 'created_by')
+    list_display  = ('created_at', 'currency', 'entry_type', 'amount', 'reference')
+    list_filter   = ('entry_type', 'currency')
+    search_fields = ('reference',)
+    readonly_fields = ('created_at', 'currency', 'entry_type', 'amount', 'reference')
     ordering = ('-created_at',)
 
-    # Pool ledger is fully immutable — no additions or edits via admin
     def has_add_permission(self, request):
         return False
 
@@ -212,20 +189,48 @@ class PoolLedgerAdmin(admin.ModelAdmin):
     def has_delete_permission(self, request, obj=None):
         return False
 
-    @admin.display(description='Transaction')
-    def linked_transaction(self, obj):
-        if obj.transaction:
-            return format_html(
-                '<a href="/admin/wallet/transaction/?reference={}">{}</a>',
-                obj.transaction.reference, obj.transaction.reference[:16] + '…',
-            )
-        return '—'
 
-    @admin.display(description='Settlement')
-    def linked_settlement(self, obj):
-        if obj.settlement:
-            return format_html(
-                '<a href="/admin/wallet/feesettlement/?reference={}">{}</a>',
-                obj.settlement.reference, obj.settlement.reference[:18] + '…',
-            )
-        return '—'
+# ── QRPaymentRequest ─────────────────────────────────────────────────────
+
+@admin.register(QRPaymentRequest)
+class QRPaymentRequestAdmin(admin.ModelAdmin):
+    list_display  = ('wallet', 'amount', 'note', 'status',
+                     'single_use', 'expires_at', 'created_at')
+    list_filter   = ('status', 'single_use')
+    search_fields = ('wallet__phone', 'note', 'token')
+    readonly_fields = ('token', 'created_at')
+
+
+# ── SuspiciousActivityFlag ───────────────────────────────────────────────
+
+@admin.register(SuspiciousActivityFlag)
+class SuspiciousActivityFlagAdmin(admin.ModelAdmin):
+    list_display  = ('created_at', 'wallet', 'flag_type',
+                     'short_description', 'reviewed')
+    list_filter   = ('flag_type', 'reviewed')
+    search_fields = ('wallet__phone', 'wallet__wallet_id', 'description')
+    readonly_fields = ('created_at', 'wallet', 'flag_type', 'description', 'transaction')
+    ordering = ('-created_at',)
+    actions = ['mark_reviewed']
+
+    @admin.display(description='Description')
+    def short_description(self, obj):
+        return obj.description[:80] + ('…' if len(obj.description) > 80 else '')
+
+    @admin.action(description='Mark selected flags as reviewed')
+    def mark_reviewed(self, request, queryset):
+        updated = queryset.update(reviewed=True)
+        self.message_user(request, f'{updated} flag(s) marked as reviewed.')
+
+
+# ── PinResetToken ────────────────────────────────────────────────────────
+
+@admin.register(PinResetToken)
+class PinResetTokenAdmin(admin.ModelAdmin):
+    list_display  = ('user', 'used', 'expires_at', 'created_at')
+    list_filter   = ('used',)
+    search_fields = ('user__phone',)
+    readonly_fields = ('token', 'code', 'created_at', 'expires_at', 'user')
+
+    def has_add_permission(self, request):
+        return False
