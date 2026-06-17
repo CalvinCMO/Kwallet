@@ -58,7 +58,6 @@ DATABASES = {
         conn_health_checks=True,
     )
 }
-
 # Risk #10: Redis cache — shared across workers, survives restarts
 # Falls back to LocMemCache for local dev without Redis
 REDIS_URL = os.environ.get('REDIS_URL', '')
