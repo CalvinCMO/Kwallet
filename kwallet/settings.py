@@ -5,6 +5,8 @@ Risk #01 (rate alert), Risk #12 (insolvency alert), Risk #08 (rate limiting).
 """
 import os
 from pathlib import Path
+import dj_database_url
+
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'change-this-in-production-minimum-50-chars-random')
@@ -50,14 +52,11 @@ TEMPLATES = [{
 WSGI_APPLICATION = 'kwallet.wsgi.application'
 
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME':     os.environ.get('PGDATABASE', 'postgres'),
-        'USER':     os.environ.get('PGUSER',     'postgres'),
-        'PASSWORD': os.environ.get('PGPASSWORD', '168290'),
-        'HOST':     os.environ.get('PGHOST',     'localhost'),
-        'PORT':     os.environ.get('PGPORT',     '5432'),
-    }
+    'default': dj_database_url.config(
+        default=os.environ.get('DATABASE_URL'),
+        conn_max_age=600,
+        conn_health_checks=True,
+    )
 }
 
 # Risk #10: Redis cache — shared across workers, survives restarts
