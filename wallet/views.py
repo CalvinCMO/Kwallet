@@ -76,6 +76,11 @@ def wallet_required(view_fn):
         try:
             wallet = request.user.wallet
         except Wallet.DoesNotExist:
+            # Logging out (rather than just redirecting to 'login') avoids
+            # an infinite loop: login_view redirects authenticated users
+            # straight to 'dashboard', which would bounce back here.
+            from django.contrib.auth import logout as _auth_logout
+            _auth_logout(request)
             messages.error(request, 'No wallet found. Please contact support.')
             return redirect('login')
         return view_fn(request, wallet, *args, **kwargs)
@@ -233,7 +238,13 @@ def register_view(request):
 
 def login_view(request):
     if request.user.is_authenticated:
-        return redirect('dashboard')
+        if Wallet.objects.filter(wallet_user=request.user).exists():
+            return redirect('dashboard')
+        # Authenticated but no wallet (e.g. an interrupted/failed past
+        # registration) — log them out instead of bouncing forever
+        # between login and dashboard.
+        auth_logout(request)
+        messages.error(request, 'Your account has no wallet on file. Please register again or contact support.')
 
     locked_until = None
     error = False
