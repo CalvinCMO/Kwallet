@@ -52,9 +52,9 @@ WSGI_APPLICATION = 'kwallet.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME':     os.environ.get('PGDATABASE', 'kwallet'),
-        'USER':     os.environ.get('PGUSER',     'kwallet'),
-        'PASSWORD': os.environ.get('PGPASSWORD', ''),
+        'NAME':     os.environ.get('PGDATABASE', 'postgres'),
+        'USER':     os.environ.get('PGUSER',     'postgres'),
+        'PASSWORD': os.environ.get('PGPASSWORD', '168290'),
         'HOST':     os.environ.get('PGHOST',     'localhost'),
         'PORT':     os.environ.get('PGPORT',     '5432'),
     }
