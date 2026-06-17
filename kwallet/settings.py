@@ -52,11 +52,11 @@ WSGI_APPLICATION = 'kwallet.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME':     os.environ.get('PGDATABASE', 'kwallet'),
-        'USER':     os.environ.get('PGUSER',     'kwallet'),
-        'PASSWORD': os.environ.get('PGPASSWORD', ''),
-        'HOST':     os.environ.get('PGHOST',     'localhost'),
-        'PORT':     os.environ.get('PGPORT',     '5432'),
+        'NAME':     os.environ.get('DB_USER', 'postgres'),
+        'USER':     os.environ.get('DB_NAME',     'postgres'),
+        'PASSWORD': os.environ.get('DB_PASSWORD', '168290'),
+        'HOST':     os.environ.get('DB_HOST',     'localhost'),
+        'PORT':     os.environ.get('DB_PORT',     '5432'),
     }
 }
 
@@ -87,20 +87,10 @@ AUTH_USER_MODEL = 'wallet.WalletUser'
 LOGIN_URL  = '/login/'
 LOGIN_REDIRECT_URL = '/'
 
-# ====================== STATIC FILES (Railway Fix) ======================
-STATIC_URL = '/static/'
+STATIC_URL  = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
-
-# Ensure directory exists at startup (prevents warning)
-import os
-if not os.path.exists(STATIC_ROOT):
-    os.makedirs(STATIC_ROOT, exist_ok=True)
-
-STATICFILES_DIRS = [
-    BASE_DIR / 'static',   # Create this folder if you want project-level static files
-]
-
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # ── M-Pesa config ──

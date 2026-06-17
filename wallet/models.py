@@ -198,21 +198,30 @@ class WalletUser(AbstractBaseUser):
 
 # ─────────────────────────────────────────────
 class Wallet(models.Model):
-    user        = models.OneToOneField(WalletUser, on_delete=models.CASCADE, related_name='wallet')
-    wallet_id   = models.CharField(max_length=20, unique=True)
-    phone       = models.CharField(max_length=20)
-    home_currency = models.CharField(max_length=3, default='KES')
+    # wallet_id is the original PK char field from 0001 (e.g. "KW1A2B3C4D5E")
+    wallet_id   = models.CharField(max_length=20, primary_key=True, editable=False, unique=True)
+    phone       = models.CharField(max_length=20, unique=True)
+    pin_hash    = models.CharField(max_length=128, blank=True)  # legacy — new code uses WalletUser.password
+    country     = models.CharField(max_length=2, default='KE')
     kyc_status  = models.CharField(max_length=10, choices=KYC_STATUSES, default='pending')  # Risk #15
-    kyc_verified_at = models.DateTimeField(null=True, blank=True)
     created_at  = models.DateTimeField(auto_now_add=True)
-    updated_at  = models.DateTimeField(auto_now=True)
+    # New FK to WalletUser (added in 0007)
+    wallet_user = models.OneToOneField(
+        WalletUser, null=True, blank=True,
+        on_delete=models.CASCADE, related_name='wallet'
+    )
+    # Fields added in 0007
+    wallet_id_str   = models.CharField(max_length=20, unique=True, null=True, blank=True)
+    home_currency   = models.CharField(max_length=3, default='KES')
+    kyc_verified_at = models.DateTimeField(null=True, blank=True)
+    updated_at      = models.DateTimeField(auto_now=True, null=True)
 
     def __str__(self):
         return f"Wallet({self.wallet_id}) — {self.phone}"
 
     def get_kes_balance(self):
         cb = self.currency_balances.filter(currency='KES').first()
-        return cb.balance if cb else 0
+        return float(cb.balance) if cb else 0
 
     def get_daily_withdrawn(self):
         """Risk #16: total withdrawn today for AML limit bar."""
@@ -231,10 +240,14 @@ class Wallet(models.Model):
 
 
 class CurrencyBalance(models.Model):
-    wallet   = models.ForeignKey(Wallet, on_delete=models.CASCADE, related_name='currency_balances')
-    currency = models.CharField(max_length=3)
-    balance  = models.DecimalField(max_digits=18, decimal_places=6, default=0)
-    added_at = models.DateTimeField(auto_now_add=True)
+    wallet       = models.ForeignKey(Wallet, on_delete=models.CASCADE, related_name='currency_balances')
+    currency     = models.CharField(max_length=3)
+    balance      = models.DecimalField(max_digits=18, decimal_places=6, default=0)
+    last_updated = models.DateTimeField(auto_now=True)  # matches 0001 schema
+
+    @property
+    def added_at(self):
+        return self.last_updated
 
     class Meta:
         unique_together = ('wallet', 'currency')

@@ -207,8 +207,12 @@ def register_view(request):
                 )
                 wallet_id = 'KW' + uuid.uuid4().hex[:10].upper()
                 wallet = Wallet.objects.create(
-                    user=user, wallet_id=wallet_id, phone=phone,
-                    home_currency='KES', kyc_status='pending',
+                    wallet_id=wallet_id,
+                    wallet_user=user,
+                    wallet_id_str=wallet_id,
+                    phone=phone,
+                    home_currency='KES',
+                    kyc_status='pending',
                 )
                 # Create default KES balance
                 CurrencyBalance.objects.create(wallet=wallet, currency='KES', balance=0)
@@ -1044,8 +1048,8 @@ def p2p_view(request, wallet):
 
         try:
             recipient_user   = WalletUser.objects.get(phone=recipient_phone)
-            recipient_wallet = recipient_user.wallet
-        except (WalletUser.DoesNotExist, Wallet.DoesNotExist):
+            recipient_wallet = recipient_user.wallet  # via wallet_user FK
+        except (WalletUser.DoesNotExist, Wallet.DoesNotExist, AttributeError):
             messages.error(request, 'Recipient not found. Please check the phone number.')
             return redirect('p2p')
 

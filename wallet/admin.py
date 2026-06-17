@@ -47,7 +47,7 @@ class WalletUserAdmin(admin.ModelAdmin):
 
 @admin.register(Wallet)
 class WalletAdmin(admin.ModelAdmin):
-    list_display  = ('wallet_id', 'user', 'phone', 'home_currency',
+    list_display  = ('wallet_id', 'wallet_user', 'phone', 'home_currency',
                      'kyc_status_badge', 'kes_balance_display', 'created_at')
     list_filter   = ('kyc_status', 'home_currency')
     search_fields = ('phone', 'wallet_id', 'user__first_name', 'user__last_name')
@@ -72,10 +72,10 @@ class WalletAdmin(admin.ModelAdmin):
 
 @admin.register(CurrencyBalance)
 class CurrencyBalanceAdmin(admin.ModelAdmin):
-    list_display  = ('wallet', 'currency', 'balance', 'added_at')
+    list_display  = ('wallet', 'currency', 'balance', 'last_updated')
     list_filter   = ('currency',)
     search_fields = ('wallet__phone', 'wallet__wallet_id')
-    readonly_fields = ('wallet', 'currency', 'added_at')
+    readonly_fields = ('wallet', 'currency', 'last_updated')
 
 
 # ── Transaction ──────────────────────────────────────────────────────────
