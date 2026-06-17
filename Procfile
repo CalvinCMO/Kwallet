@@ -1,1 +1,1 @@
-web: python manage.py migrate && gunicorn kwallet.wsgi
+web: python manage.py migrate && gunicorn kwallet.wsgi --bind 0.0.0.0:$PORT
