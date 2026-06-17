@@ -5,7 +5,7 @@ Risk #01 (rate alert), Risk #12 (insolvency alert), Risk #08 (rate limiting).
 """
 import os
 from pathlib import Path
-import dj_database_url
+import dj_database_url   # ← Added for Railway DATABASE_URL support
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -58,27 +58,16 @@ TEMPLATES = [{
 
 WSGI_APPLICATION = 'kwallet.wsgi.application'
 
-# ── Database ──────────────────────────────────────────────────────────────────
-# Railway Postgres plugin sets DATABASE_URL automatically.
-# Falls back to local SQLite for development when DATABASE_URL is absent.
+# ====================== DATABASE (Railway Fix) ======================
+# Uses DATABASE_URL provided by Railway
+DATABASES = {
+    'default': dj_database_url.config(
+        default=os.environ.get('DATABASE_URL'),
+        conn_max_age=600,
+        conn_health_checks=True,
+    )
+}
 
-_db_url = os.environ.get('DATABASE_URL')
-
-if _db_url:
-    DATABASES = {
-        'default': dj_database_url.parse(
-            _db_url,
-            conn_max_age=600,       # persistent connections — important on Railway
-            conn_health_checks=True,
-        )
-    }
-else:
-    DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.sqlite3',
-            'NAME':   BASE_DIR / 'db.sqlite3',
-        }
-    }
 # ====================== STATIC FILES ======================
 STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
@@ -120,9 +109,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # ====================== SECURITY (Railway Fix) ======================
 if not DEBUG:
-    # Critical fix for Railway / Proxy SSL
     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
-    
     SECURE_SSL_REDIRECT = True
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
@@ -137,7 +124,7 @@ else:
     SESSION_COOKIE_SECURE = False
     CSRF_COOKIE_SECURE = False
 
-# ====================== MPESA, AIRTEL, EMAIL, LOGGING (unchanged) ======================
+# ====================== MPESA, AIRTEL, EMAIL, LOGGING ======================
 MPESA_CONFIG = {
     'CONSUMER_KEY':          os.environ.get('MPESA_CONSUMER_KEY', ''),
     'CONSUMER_SECRET':       os.environ.get('MPESA_CONSUMER_SECRET', ''),
