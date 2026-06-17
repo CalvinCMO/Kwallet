@@ -5,6 +5,7 @@ Risk #01 (rate alert), Risk #12 (insolvency alert), Risk #08 (rate limiting).
 """
 import os
 from pathlib import Path
+import dj_database_url   # ← Added for Railway DATABASE_URL support
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -57,16 +58,14 @@ TEMPLATES = [{
 
 WSGI_APPLICATION = 'kwallet.wsgi.application'
 
-# ====================== DATABASE ======================
+# ====================== DATABASE (Railway Fix) ======================
+# Uses DATABASE_URL provided by Railway
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME':     os.environ.get('PGDATABASE', 'kwallet'),
-        'USER':     os.environ.get('PGUSER', 'kwallet'),
-        'PASSWORD': os.environ.get('PGPASSWORD', ''),
-        'HOST':     os.environ.get('PGHOST', 'localhost'),
-        'PORT':     os.environ.get('PGPORT', '5432'),
-    }
+    'default': dj_database_url.config(
+        default=os.environ.get('DATABASE_URL'),
+        conn_max_age=600,
+        conn_health_checks=True,
+    )
 }
 
 # ====================== STATIC FILES ======================
@@ -110,9 +109,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # ====================== SECURITY (Railway Fix) ======================
 if not DEBUG:
-    # Critical fix for Railway / Proxy SSL
     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
-    
     SECURE_SSL_REDIRECT = True
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
@@ -127,7 +124,7 @@ else:
     SESSION_COOKIE_SECURE = False
     CSRF_COOKIE_SECURE = False
 
-# ====================== MPESA, AIRTEL, EMAIL, LOGGING (unchanged) ======================
+# ====================== MPESA, AIRTEL, EMAIL, LOGGING ======================
 MPESA_CONFIG = {
     'CONSUMER_KEY':          os.environ.get('MPESA_CONSUMER_KEY', ''),
     'CONSUMER_SECRET':       os.environ.get('MPESA_CONSUMER_SECRET', ''),
