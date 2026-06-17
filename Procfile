@@ -1,1 +1,3 @@
-web: python manage.py migrate && gunicorn kwallet.wsgi --bind 0.0.0.0:$PORT
+web: gunicorn kwallet.wsgi --workers 2 --threads 2 --timeout 120
+release: python manage.py migrate --noinput
+cron: python manage.py resolve_orphans

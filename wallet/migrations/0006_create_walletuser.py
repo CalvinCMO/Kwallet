@@ -1,15 +1,18 @@
 """
-Migration 0006: Create WalletUser custom auth model.
+Migration 0006: (historical no-op)
 
-The original 0001 used swappable_dependency(settings.AUTH_USER_MODEL)
-pointing to auth.User. We now introduce wallet.WalletUser. This migration
-only creates the table so 0007 can reference it safely in the graph.
+WalletUser used to be created here, but that's exactly what broke
+production: Django resolves admin/auth's swappable_dependency on
+AUTH_USER_MODEL to wallet's FIRST migration, not to wherever the model
+happens to be defined. With WalletUser created in 0006, admin.0001_initial
+ran right after wallet.0001_initial and tried to FK into a WalletUser
+table that didn't exist yet -> "relation does not exist".
 
-IMPORTANT: after applying this migration set settings.AUTH_USER_MODEL
-= 'wallet.WalletUser' and run migrate.
+WalletUser is now created directly in 0001_initial. This migration is
+kept as a harmless no-op so the migration history/numbering of 0007+
+doesn't have to change.
 """
-import django.utils.timezone
-from django.db import migrations, models
+from django.db import migrations
 
 
 class Migration(migrations.Migration):
@@ -18,24 +21,4 @@ class Migration(migrations.Migration):
         ('wallet', '0005_paymentrequest'),
     ]
 
-    operations = [
-        migrations.CreateModel(
-            name='WalletUser',
-            fields=[
-                ('id',                    models.BigAutoField(primary_key=True, serialize=False)),
-                ('password',              models.CharField(max_length=255)),
-                ('last_login',            models.DateTimeField(null=True, blank=True)),
-                ('phone',                 models.CharField(max_length=20, unique=True)),
-                ('first_name',            models.CharField(max_length=80, blank=True)),
-                ('last_name',             models.CharField(max_length=80, blank=True)),
-                ('is_active',             models.BooleanField(default=True)),
-                ('is_staff',              models.BooleanField(default=False)),
-                ('is_superuser',          models.BooleanField(default=False)),
-                ('date_joined',           models.DateTimeField(default=django.utils.timezone.now)),
-                # Risk #03: brute-force lockout fields
-                ('failed_login_attempts', models.PositiveIntegerField(default=0)),
-                ('locked_until',          models.DateTimeField(null=True, blank=True)),
-            ],
-            options={'verbose_name': 'User'},
-        ),
-    ]
+    operations = []

@@ -50,7 +50,7 @@ class WalletAdmin(admin.ModelAdmin):
     list_display  = ('wallet_id', 'wallet_user', 'phone', 'home_currency',
                      'kyc_status_badge', 'kes_balance_display', 'created_at')
     list_filter   = ('kyc_status', 'home_currency')
-    search_fields = ('phone', 'wallet_id', 'user__first_name', 'user__last_name')
+    search_fields = ('phone', 'wallet_id', 'wallet_user__first_name', 'wallet_user__last_name')
     readonly_fields = ('wallet_id', 'created_at', 'updated_at', 'kyc_verified_at')
 
     @admin.display(description='KYC')

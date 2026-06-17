@@ -147,7 +147,6 @@ class WalletUser(AbstractBaseUser):
 
     class Meta:
         verbose_name = 'User'
-        db_table = 'wallet_walletuser'
 
     def __str__(self):
         return self.phone
@@ -206,6 +205,11 @@ class Wallet(models.Model):
     country     = models.CharField(max_length=2, default='KE')
     kyc_status  = models.CharField(max_length=10, choices=KYC_STATUSES, default='pending')  # Risk #15
     created_at  = models.DateTimeField(auto_now_add=True)
+    # Legacy auth.User PK, kept only so historical rows aren't lost.
+    # NOTE: this is a plain integer, not a ForeignKey/relation, because
+    # Django forbids any model from referencing 'auth.User' once
+    # AUTH_USER_MODEL has been swapped to wallet.WalletUser (E301).
+    legacy_user_id = models.IntegerField(null=True, blank=True)
     # New FK to WalletUser (added in 0007)
     wallet_user = models.OneToOneField(
         WalletUser, null=True, blank=True,
