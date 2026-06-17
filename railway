@@ -1,0 +1,10 @@
+{
+  "build": {
+    "builder": "NIXPACKS",
+    "buildCommand": "pip install -r requirements.txt && python manage.py collectstatic --no-input"
+  },
+  "deploy": {
+    "startCommand": "gunicorn kwallet.wsgi:application --workers 2 --threads 2 --timeout 120",
+    "restartPolicy": "ON_FAILURE"
+  }
+}
