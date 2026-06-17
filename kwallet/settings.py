@@ -11,7 +11,10 @@ import dj_database_url
 BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'change-this-in-production-minimum-50-chars-random')
 DEBUG      = os.environ.get('DEBUG', 'False') == 'True'
-ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
+ALLOWED_HOSTS = os.environ.get(
+    'ALLOWED_HOSTS', 
+    'localhost,127.0.0.1,kwallet-production-c0bd.up.railway.app,.up.railway.app'
+).split(',')
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -163,3 +166,6 @@ if not DEBUG:
     SECURE_HSTS_INCLUDE_SUBDOMAINS= True
     SECURE_HSTS_PRELOAD           = True
     X_FRAME_OPTIONS               = 'DENY'
+
+    # 🔥 IMPORTANT for Railway / any reverse proxy
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
