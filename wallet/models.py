@@ -147,6 +147,7 @@ class WalletUser(AbstractBaseUser):
 
     class Meta:
         verbose_name = 'User'
+        db_table = 'wallet_walletuser'
 
     def __str__(self):
         return self.phone
