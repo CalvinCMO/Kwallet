@@ -35,9 +35,9 @@
       <div class="hh-top">
         <div>
           <div class="home-greeting">Good day,</div>
-          <div class="home-name">{{ wallet.user.get_full_name|default:wallet.user.username }}</div>
+          <div class="home-name">{{ user.get_full_name|default:user.phone }}</div>
         </div>
-        <div class="dash-avatar">{{ wallet.user.first_name|slice:":1" }}{{ wallet.user.last_name|slice:":1" }}</div>
+        <div class="dash-avatar">{{ user.first_name|slice:":1" }}{{ user.last_name|slice:":1" }}</div>
       </div>
     </div>
 

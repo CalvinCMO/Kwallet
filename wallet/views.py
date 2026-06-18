@@ -98,6 +98,20 @@ def kyc_required(view_fn):
     return wrapper
 
 
+def get_client_ip(request):
+    """
+    Risk #03/#05/#08: X-Forwarded-For is a comma-separated list of IPs when
+    requests pass through one or more proxies (e.g. Railway's edge) — the
+    client's original IP is the first entry. Using the raw header value as
+    a rate-limit key or for IP-allowlist checks is incorrect: it produces
+    invalid/inconsistent cache keys and can break prefix-based IP matching.
+    """
+    xff = request.META.get('HTTP_X_FORWARDED_FOR', '')
+    if xff:
+        return xff.split(',')[0].strip()
+    return request.META.get('REMOTE_ADDR', '')
+
+
 def _rate_limit_key(prefix, identifier):
     return f"ratelimit:{prefix}:{identifier}"
 
@@ -255,7 +269,7 @@ def login_view(request):
         pin   = request.POST.get('pin', '')
 
         # Risk #03 & #08: IP-level rate limit — 10 attempts/15 min per IP
-        ip = request.META.get('HTTP_X_FORWARDED_FOR', request.META.get('REMOTE_ADDR', ''))
+        ip = get_client_ip(request)
         allowed, _ = _check_rate_limit('login_ip', ip, 10, 900)
         if not allowed:
             messages.error(request, 'Too many login attempts from your network. Please try again in 15 minutes.')
@@ -479,7 +493,7 @@ def mpesa_callback(request):
     """
     # Risk #05: verify Safaricom IP
     client = MpesaClient()
-    client_ip = request.META.get('HTTP_X_FORWARDED_FOR', request.META.get('REMOTE_ADDR', ''))
+    client_ip = get_client_ip(request)
     if not client.verify_callback_ip(client_ip):
         logger.warning(f'M-Pesa callback from unallowed IP: {client_ip}')
         return JsonResponse({'ResultCode': 1, 'ResultDesc': 'Unauthorised'}, status=403)
@@ -543,7 +557,7 @@ def mpesa_callback(request):
 def mpesa_b2c_result(request):
     """B2C withdrawal result callback. Risk #04: resolve pending withdrawal."""
     client = MpesaClient()
-    client_ip = request.META.get('HTTP_X_FORWARDED_FOR', request.META.get('REMOTE_ADDR', ''))
+    client_ip = get_client_ip(request)
     if not client.verify_callback_ip(client_ip):
         return JsonResponse({'ResultCode': 1, 'ResultDesc': 'Unauthorised'}, status=403)
 
@@ -591,6 +605,11 @@ def airtel_callback(request):
     Risk #05: shared-secret header verified.
     """
     client = AirtelClient()
+    client_ip = get_client_ip(request)
+    if not client.verify_callback_ip(client_ip):
+        logger.warning(f'Airtel callback from unallowed IP: {client_ip}')
+        return JsonResponse({'status': 'error'}, status=403)
+
     secret = request.headers.get('X-Airtel-Signature', '')
     if not client.verify_callback_secret(secret):
         logger.warning('Airtel callback secret mismatch')

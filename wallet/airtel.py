@@ -4,6 +4,7 @@ Mirrors the structure of mpesa.py so both use the same callback/idempotency patt
 Risk #02: idempotency key prevents double-credit.
 Risk #05: callback verified with shared-secret header + IP allowlist.
 """
+import hmac
 import uuid
 import logging
 import requests
@@ -131,3 +132,11 @@ class AirtelClient:
             logger.warning("AIRTEL_CALLBACK_SECRET not configured — callback unprotected!")
             return False
         return hmac.compare_digest(request_secret, expected)
+
+    def verify_callback_ip(self, ip: str) -> bool:
+        """Risk #05: only accept callbacks from Airtel's allowlisted IPs/prefixes."""
+        allowed = [p for p in self.cfg.get('ALLOWED_CALLBACK_IPS', []) if p]
+        if not allowed:
+            logger.warning('No Airtel callback IP allowlist configured (AIRTEL_CALLBACK_IPS)!')
+            return False
+        return any(ip.startswith(prefix) for prefix in allowed)
