@@ -4,6 +4,53 @@ Patched copy based on the uploaded `Kwallet_comp.zip`. `.env` and `.git/`
 were intentionally excluded from this copy (secrets / VCS history) — copy
 your real `.env` back in before running this.
 
+## 0. Random logouts in production (added after initial review)
+
+**File:** `kwallet/settings.py`
+
+`SESSION_ENGINE` was hardcoded to `'django.contrib.sessions.backends.cache'`,
+backed by `CACHES['default']`, which itself falls back to `LocMemCache`
+whenever `REDIS_URL` isn't set. `LocMemCache` is private to a single
+process — it is NOT shared across gunicorn's worker processes (your
+Procfile/railway config boot 2 workers; confirmed in your logs as
+`pid: 5` and `pid: 6`).
+
+Effect: when `REDIS_URL` is unset (your case), each gunicorn worker has its
+own independent session store. A login handled by worker 5 writes the
+session into worker 5's memory only; if the next request from the same
+browser lands on worker 6 (gunicorn round-robins requests), worker 6 has
+never seen that session ID and treats the user as logged out — even
+though the `sessionid` cookie is present and valid. This produces exactly
+the symptom reported: dashboard loads fine right after login, then a
+later request randomly shows logged-out, with zero errors in the log
+(Django is behaving correctly given what it can see — there's no
+exception, the session genuinely isn't present in that worker's cache).
+
+**Fix:** `SESSION_ENGINE` now only uses the cache backend when `REDIS_URL`
+is actually set (a real shared store across workers). Otherwise it falls
+back to `django.contrib.sessions.backends.db` — the database, which is
+already shared across all workers via Postgres, and requires no new
+migration (the `django_session` table already exists; `sessions` is in
+`INSTALLED_APPS` and was already migrated per your log).
+
+**Verified:** simulated two fully independent Python processes (no shared
+memory — equivalent to two separate gunicorn workers) sharing only the
+sqlite-backed session table. Process A logged in; process B, a brand-new
+process, correctly recognized the session and rendered the dashboard
+(200, no redirect). Re-running the same test forcing the old
+`cache`-backed engine reproduced the bug exactly: process B got bounced
+to `/login/` (302) despite holding a valid session cookie.
+
+**Note:** the rate limiter (`_check_rate_limit`) and the M-Pesa OAuth
+token / exchange-rate caches in `mpesa.py` / `rates.py` also use this same
+cache and are technically also per-process without Redis — but those only
+degrade gracefully (rate limits get counted per-worker instead of
+globally, so effective limits are looser than configured; tokens/rates get
+fetched slightly more often). Neither produces an incorrect user-facing
+result the way sessions did, so they were left as-is. If you add Redis
+later, all of these — including sessions — automatically become properly
+shared with no further code changes needed.
+
 ## 1. Dashboard 500 → login-redirect-loop (the originally reported bug)
 
 **File:** `wallet/templates/wallet/dashboard.html`

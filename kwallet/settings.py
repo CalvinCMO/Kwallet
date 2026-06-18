@@ -81,8 +81,19 @@ else:
         }
     }
 
-SESSION_ENGINE = 'django.contrib.sessions.backends.db'
-SESSION_CACHE_ALIAS = 'default'
+# Sessions MUST live somewhere shared across all gunicorn worker processes.
+# LocMemCache is per-process — if SESSION_ENGINE='cache' is used with it
+# (e.g. when REDIS_URL isn't set), each worker has its own private session
+# store, so a login handled by worker A is invisible to worker B and the
+# user gets randomly logged out depending on which worker serves the next
+# request. Only use cache-backed sessions when Redis (a real shared store)
+# is configured; otherwise use the database, which is already shared via
+# Postgres across all workers.
+if REDIS_URL:
+    SESSION_ENGINE = 'django.contrib.sessions.backends.cache'
+    SESSION_CACHE_ALIAS = 'default'
+else:
+    SESSION_ENGINE = 'django.contrib.sessions.backends.db'
 
 AUTH_USER_MODEL = 'wallet.WalletUser'
 LOGIN_URL  = '/login/'
