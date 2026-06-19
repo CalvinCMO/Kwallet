@@ -1,0 +1,173 @@
+{% extends "wallet/base.html" %}
+{% block title %}Bank — KWallet{% endblock %}
+{% block content %}
+<div class="page-sm">
+
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.5rem">
+    <div>
+      <div style="font-size:.72rem;color:var(--ink-3);margin-bottom:2px">PesaLink / RTGS</div>
+      <h1 style="font-size:1.5rem;font-weight:800;color:var(--ink);letter-spacing:-.03em">Bank Transfer</h1>
+    </div>
+    <a href="{% url 'dashboard' %}" class="back-btn">← Back</a>
+  </div>
+
+  {% if messages %}
+  <div class="msgs">{% for m in messages %}<div class="msg msg-{{ m.tags }}">{{ m }}</div>{% endfor %}</div>
+  {% endif %}
+
+  {# ── Direction tabs ── #}
+  <div class="method-tabs-bar" style="padding:0 0 14px">
+    <button class="method-tab active-mpesa" id="dt-deposit" onclick="switchBankTab('deposit',this)">⬇️ Deposit</button>
+    <button class="method-tab" id="dt-withdraw" onclick="switchBankTab('withdraw',this)">⬆️ Withdraw</button>
+  </div>
+
+  {# ── BANK DEPOSIT ── #}
+  <div class="method-pane active" id="bpane-deposit">
+    <div class="info-chip">
+      <div class="info-chip-icon" style="background:var(--bank-lt)">🏦</div>
+      <div>
+        <div class="info-chip-title">Transfer funds into your wallet</div>
+        <div class="info-chip-sub">Send from any CBK-licensed bank via PesaLink or RTGS. Free. Credits within 2 hours.</div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:1rem">
+      <div class="card-title" style="font-size:.78rem">💳 KWallet Collection Account</div>
+      <div style="display:flex;flex-direction:column;gap:.55rem">
+        <div style="display:flex;justify-content:space-between;font-size:.8rem">
+          <span style="color:var(--ink-3)">Bank</span>
+          <span style="font-weight:600">KCB Kenya</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:.8rem">
+          <span style="color:var(--ink-3)">Account Name</span>
+          <span style="font-weight:600">KWallet Ltd</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:.8rem">
+          <span style="color:var(--ink-3)">Account Number</span>
+          <span style="font-weight:600;font-family:'JetBrains Mono',monospace">1234567890</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:.8rem">
+          <span style="color:var(--ink-3)">Your Reference</span>
+          <span style="font-weight:700;color:var(--teal-dk);font-family:'JetBrains Mono',monospace" id="walletIdRef">{{ wallet.wallet_id }}</span>
+        </div>
+      </div>
+      <button onclick="copyRef()" style="margin-top:.75rem;width:100%;font-size:.75rem;padding:.4rem;border:1px dashed var(--teal);background:var(--teal-50);border-radius:8px;cursor:pointer;color:var(--teal-dk);font-weight:600" id="copyBtn">📋 Copy Reference ID</button>
+    </div>
+
+    <div class="ibox" style="margin-bottom:1rem">
+      ⚠️ <strong>Always use your wallet ID as the payment reference.</strong> Deposits without your reference may be delayed up to 48 hours.
+    </div>
+
+    <div class="card">
+      <div class="card-title" style="font-size:.78rem;margin-bottom:.75rem">📨 Notify KWallet of your transfer</div>
+      <p style="font-size:.78rem;color:var(--ink-3);margin-bottom:.85rem">After sending, submit your receipt details so we can credit you faster.</p>
+      <form method="post" action="{% url 'bank_deposit_notify' %}">
+        {% csrf_token %}
+        <div class="fg">
+          <label class="fl">Amount Sent (KES) <span style="color:red">*</span></label>
+          <input class="fi fi-bank" type="number" name="amount" step="1" min="500" placeholder="e.g. 10000" required>
+        </div>
+        <div class="fg">
+          <label class="fl">Your Bank Name <span style="color:red">*</span></label>
+          <input class="fi fi-bank" type="text" name="bank_name" placeholder="e.g. Equity Bank" required>
+        </div>
+        <div class="fg">
+          <label class="fl">Your Bank Account Number <span class="field-hint">(optional)</span></label>
+          <input class="fi fi-bank" type="text" name="account_number" placeholder="e.g. 0012345678">
+        </div>
+        <div class="fg">
+          <label class="fl">Transaction Receipt / Reference <span style="color:red">*</span></label>
+          <input class="fi fi-bank" type="text" name="bank_ref" placeholder="e.g. FT2406123456" required>
+          <div class="fh">Found on your bank SMS or internet banking receipt</div>
+        </div>
+        <button type="submit" class="btn btn-bank btn-block">Notify KWallet of Transfer →</button>
+      </form>
+    </div>
+  </div>
+
+  {# ── BANK WITHDRAWAL ── #}
+  <div class="method-pane" id="bpane-withdraw">
+    {% if wallet.kyc_status != 'verified' %}
+    <div class="msg msg-warning" style="margin-bottom:1rem">
+      🪪 <strong>KYC required</strong> for bank withdrawals.
+      <a href="{% url 'kyc_start' %}" style="color:var(--teal-dk);font-weight:600">Verify now →</a>
+    </div>
+    {% endif %}
+
+    <div class="info-chip">
+      <div class="info-chip-icon" style="background:var(--bank-lt)">🏦</div>
+      <div>
+        <div class="info-chip-title">Withdraw to your bank account</div>
+        <div class="info-chip-sub">Available KES: <strong>{{ kes_balance|floatformat:2 }}</strong> · Fee: KES {{ bank_withdraw_fee }} · Min: KES 500 · Processed within 4 hours.</div>
+      </div>
+    </div>
+
+    {% if wallet.kyc_status == 'verified' %}
+    <form method="post" action="{% url 'bank_withdraw' %}">
+      {% csrf_token %}
+      <div class="fg">
+        <label class="fl">Bank Name <span style="color:red">*</span></label>
+        <select class="fi fi-bank" name="bank_name" required>
+          <option value="">— select your bank —</option>
+          {% for code, name in bank_choices %}
+          <option value="{{ name }}">{{ name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="fg">
+        <label class="fl">Account Number <span style="color:red">*</span></label>
+        <input class="fi fi-bank" type="text" name="account_number" placeholder="e.g. 0012345678" required>
+      </div>
+      <div class="fg">
+        <label class="fl">Account Name <span style="color:red">*</span></label>
+        <input class="fi fi-bank" type="text" name="account_name" placeholder="As registered at your bank" required>
+      </div>
+      <div class="fg">
+        <label class="fl">Amount (KES) <span style="color:red">*</span></label>
+        <input class="fi fi-bank" type="number" name="amount" step="1" min="500"
+               max="{{ kes_balance|floatformat:0 }}" placeholder="e.g. 5000" required>
+        <div class="fh">Available: KES {{ kes_balance|floatformat:2 }} · Fee: KES {{ bank_withdraw_fee }} deducted from amount</div>
+      </div>
+      <div class="ibox">
+        🔒 Funds are transferred via <strong>PesaLink / RTGS</strong>. Arrives in your bank within 4 hours on business days.
+        {% if wallet.kyc_status == 'verified' %}
+        Large transfers above KES 100,000 require additional compliance review.
+        {% endif %}
+      </div>
+      <button type="submit" class="btn btn-bank btn-block"
+        {% if wallet.kyc_status != 'verified' %}disabled{% endif %}>
+        Withdraw to Bank →
+      </button>
+    </form>
+    {% else %}
+    <div style="text-align:center;padding:2rem 0">
+      <a href="{% url 'kyc_start' %}" class="btn btn-primary">Verify Identity to Withdraw →</a>
+    </div>
+    {% endif %}
+  </div>
+
+</div>
+
+<script>
+function switchBankTab(tab, el) {
+  document.querySelectorAll('.method-pane').forEach(p => p.classList.remove('active'));
+  document.getElementById('bpane-' + tab).classList.add('active');
+  document.querySelectorAll('.method-tab').forEach(t => t.className = 'method-tab');
+  el.classList.add('active-mpesa');
+}
+
+function copyRef() {
+  const ref = document.getElementById('walletIdRef').textContent;
+  navigator.clipboard.writeText(ref).then(() => {
+    const btn = document.getElementById('copyBtn');
+    btn.textContent = '✅ Copied!';
+    setTimeout(() => btn.textContent = '📋 Copy Reference ID', 2000);
+  });
+}
+
+// Auto-switch to withdraw tab if URL has #withdraw
+if (window.location.hash === '#withdraw') {
+  switchBankTab('withdraw', document.getElementById('dt-withdraw'));
+}
+</script>
+{% endblock %}

@@ -28,6 +28,12 @@ urlpatterns = [
     # Airtel callback
     path('airtel/callback/',       views.airtel_callback,       name='airtel_callback'),
 
+    # Bank — unified deposit + withdrawal
+    path('bank/',                  views.bank_view,             name='bank'),
+
+    # Bank webhook (PesaLink confirms deposit)
+    path('bank/webhook/',          views.bank_deposit_webhook,  name='bank_deposit_webhook'),
+
     # STK query (Risk #02: read-only — no credit)
     path('mpesa/query/',           views.stk_query_view,        name='stk_query'),
 
@@ -39,6 +45,7 @@ urlpatterns = [
 
     # Currencies
     path('currencies/add/',        views.add_currency_view,     name='add_currency'),
+    path('currencies/remove/',     views.remove_currency_view,  name='remove_currency'),
 
     # Transactions
     path('transactions/',          views.transactions_view,     name='transactions'),

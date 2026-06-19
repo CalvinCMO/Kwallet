@@ -6,9 +6,13 @@
     <div class="pulse-dot"></div>
   </div>
   <h1 style="font-size:1.4rem;font-weight:800;color:var(--ink);margin-bottom:.5rem">Check your phone</h1>
-  <p style="color:var(--ink-3);margin-bottom:1.5rem">An M-Pesa prompt has been sent to <strong>{{ phone }}</strong>.<br>Enter your M-Pesa PIN to complete payment.</p>
+  <p style="color:var(--ink-3);margin-bottom:1.5rem">
+    A <strong>{{ rail|default:"M-Pesa" }}</strong> prompt has been sent to <strong>{{ phone }}</strong>.<br>
+    Enter your PIN to complete payment.
+  </p>
   <div class="ibox" style="text-align:left;margin-bottom:1.5rem">
     <strong>Amount:</strong> KES {{ amount|floatformat:2 }}<br>
+    <strong>Payment via:</strong> {{ rail|default:"M-Pesa" }}<br>
     <strong>Reference:</strong> {{ reference }}
   </div>
   <a href="{% url 'qr_pay' token %}" class="btn btn-ghost btn-sm">← Try again</a>

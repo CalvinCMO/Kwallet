@@ -17,22 +17,71 @@
   {% endif %}
 
   <div class="card">
-    <form method="post">
+    <form method="post" id="qrPayForm">
       {% csrf_token %}
+
+      {# ── Rail selection ── #}
       <div class="fg">
-        <label class="fl">Your M-Pesa Phone Number</label>
-        <input class="fi" type="tel" name="phone" placeholder="07XX XXX XXX" required autofocus>
-        <div class="fh">You'll receive an M-Pesa payment prompt</div>
+        <label class="fl" style="margin-bottom:.6rem">Choose Payment Method</label>
+        <div style="display:flex;gap:.75rem;margin-bottom:.25rem" id="railPicker">
+          <label class="rail-opt" id="rail-mpesa-lbl" style="flex:1;border:2px solid var(--teal);border-radius:10px;padding:.75rem;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:.35rem;transition:border-color .15s">
+            <input type="radio" name="rail" value="mpesa" style="display:none" checked>
+            <span style="font-size:1.4rem">🟢</span>
+            <span style="font-size:.8rem;font-weight:700;color:var(--ink)">M-Pesa</span>
+            <span style="font-size:.7rem;color:var(--ink-3)">Safaricom</span>
+          </label>
+          <label class="rail-opt" id="rail-airtel-lbl" style="flex:1;border:2px solid var(--border);border-radius:10px;padding:.75rem;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:.35rem;transition:border-color .15s">
+            <input type="radio" name="rail" value="airtel" style="display:none">
+            <span style="font-size:1.4rem">🔴</span>
+            <span style="font-size:.8rem;font-weight:700;color:var(--ink)">Airtel Money</span>
+            <span style="font-size:.7rem;color:var(--ink-3)">073x / 075x / 078x</span>
+          </label>
+        </div>
+        <div class="fh" id="railHint">Enter the phone number for your selected network below.</div>
       </div>
+
+      <div class="fg">
+        <label class="fl">Your Phone Number</label>
+        <input class="fi" type="tel" name="phone" id="phoneInput"
+               placeholder="07XX XXX XXX" required autofocus>
+        <div class="fh" id="phoneHint">Must match your chosen payment network</div>
+      </div>
+
       {% if not req.amount %}
       <div class="fg">
         <label class="fl">Amount (KES)</label>
-        <input class="fi" type="number" name="amount" step="1" min="1" placeholder="Enter amount" required>
+        <input class="fi" type="number" name="amount" step="1" min="1"
+               placeholder="Enter amount" required>
       </div>
       {% endif %}
-      <button type="submit" class="btn btn-primary btn-block">Pay via M-Pesa →</button>
+
+      <button type="submit" class="btn btn-primary btn-block" id="payBtn">Pay via M-Pesa →</button>
     </form>
   </div>
   <div class="auth-foot" style="margin-top:1rem">Powered by <strong>KWallet</strong> · Payments are secure and encrypted</div>
 </div>
+
+<style>
+.rail-opt input:checked ~ * { color: var(--teal-dk); }
+</style>
+<script>
+const opts = document.querySelectorAll('.rail-opt');
+const payBtn = document.getElementById('payBtn');
+const phoneHint = document.getElementById('phoneHint');
+const railHint = document.getElementById('railHint');
+
+opts.forEach(lbl => {
+  lbl.addEventListener('click', function() {
+    const radio = this.querySelector('input[type=radio]');
+    radio.checked = true;
+    opts.forEach(o => o.style.borderColor = 'var(--border)');
+    this.style.borderColor = 'var(--teal)';
+    const isAirtel = radio.value === 'airtel';
+    payBtn.textContent = isAirtel ? 'Pay via Airtel Money →' : 'Pay via M-Pesa →';
+    phoneHint.textContent = isAirtel
+      ? 'Enter your Airtel Kenya number (073x, 075x, 078x)'
+      : 'Enter your Safaricom M-Pesa number (07xx, 01xx)';
+  });
+});
+</script>
 {% endblock %}

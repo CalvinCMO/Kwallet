@@ -132,11 +132,12 @@ def _dashboard_context(wallet):
     daily_withdrawn = float(wallet.get_daily_withdrawn())
     daily_pct = wallet.get_daily_pct()
     recent_txns = wallet.transactions.all()[:8]
-    total_value = sum(float(cb.balance) for cb in balances if cb.currency == wallet.home_currency)
+    home_currency = wallet.home_currency or (balances.first().currency if balances.exists() else 'KES')
+    total_value = sum(float(cb.balance) for cb in balances if cb.currency == home_currency)
     return {
         'wallet': wallet,
         'balances': balances,
-        'home_currency': wallet.home_currency,
+        'home_currency': home_currency,
         'recent_txns': recent_txns,
         'total_value': total_value,
         'rates_stale': rates_are_stale(),
@@ -230,16 +231,15 @@ def register_view(request):
                     wallet_user=user,
                     wallet_id_str=wallet_id,
                     phone=phone,
-                    home_currency='KES',
+                    home_currency='',  # No default — user selects on first login
                     kyc_status='pending',
+                    country=country,
                 )
-                # Create default KES balance
-                CurrencyBalance.objects.create(wallet=wallet, currency='KES', balance=0)
                 WalletLimit.objects.create(wallet=wallet)
 
             auth_login(request, user, backend='django.contrib.auth.backends.ModelBackend')
-            messages.success(request, f'Welcome, {first_name}! Your wallet has been created. Please complete KYC to unlock all features.')
-            return redirect('kyc_start')
+            messages.success(request, f'Welcome, {first_name}! Please add at least one currency to your wallet, then complete KYC.')
+            return redirect('add_currency')
         except Exception as e:
             logger.exception('Registration error')
             messages.error(request, 'Registration failed. Please try again.')
@@ -332,14 +332,16 @@ def dashboard_view(request, wallet):
 def mpesa_deposit_view(request, wallet):
     mock_mode = getattr(__import__('django.conf', fromlist=['settings']).settings, 'MPESA_CONFIG', {}).get('USE_MOCK', False)
 
-    if request.method == 'POST' and request.POST.get('deposit_method') == 'mpesa':
+    if request.method == 'POST':
+        deposit_method = request.POST.get('deposit_method', 'mpesa')
+
         # Risk #08: rate limit deposits
-        allowed, _ = _check_rate_limit('deposit', str(wallet.id), 10, 3600)
+        allowed, _ = _check_rate_limit('deposit', str(wallet.wallet_id), 10, 3600)
         if not allowed:
             messages.error(request, 'Too many deposit requests. Please wait before trying again.')
             return redirect('mpesa_deposit')
 
-        phone  = request.POST.get('phone', wallet.phone).strip()
+        phone  = request.POST.get('phone', wallet.phone).strip() or wallet.phone
         amount_str = request.POST.get('amount', '').strip()
         try:
             amount = Decimal(amount_str)
@@ -349,38 +351,64 @@ def mpesa_deposit_view(request, wallet):
             messages.error(request, 'Invalid amount.')
             return redirect('mpesa_deposit')
 
-        idempotency_key = str(uuid.uuid4())
-        try:
-            client = MpesaClient()
-            response = client.stk_push(phone=phone, amount=float(amount),
-                                        account_ref=wallet.wallet_id,
-                                        transaction_desc='KWallet Deposit')
-            checkout_id = response.get('CheckoutRequestID', '')
-            if checkout_id:
-                MpesaTransaction.objects.create(
-                    wallet=wallet,
-                    checkout_request_id=checkout_id,
-                    merchant_request_id=response.get('MerchantRequestID', ''),
-                    amount=amount,
-                    phone=phone,
-                    status='pending',
-                    transaction_type='mpesa_deposit',
-                    # Risk #04: set timeout for orphaned transactions
+        if deposit_method == 'airtel':
+            # ── Airtel STK / collection push ──
+            airtel_client = AirtelClient()
+            if not airtel_client.validate_ke_number(phone):
+                messages.error(request, 'Please enter a valid Airtel Kenya number (073x, 075x, 078x).')
+                return redirect('mpesa_deposit')
+            idempotency_key = str(uuid.uuid4())
+            try:
+                response = airtel_client.collection_request(
+                    phone=phone, amount=float(amount),
+                    ref=wallet.wallet_id, idempotency_key=idempotency_key,
+                )
+                airtel_ref = response.get('data', {}).get('transaction', {}).get('id', idempotency_key)
+                AirtelTransaction.objects.create(
+                    wallet=wallet, airtel_ref=airtel_ref, amount=amount, phone=phone,
+                    status='pending', transaction_type='airtel_deposit',
                     timeout_at=timezone.now() + timezone.timedelta(minutes=30),
                 )
-                messages.success(request, f'M-Pesa prompt sent to {phone}. Enter your PIN to complete.')
-            else:
-                messages.error(request, 'Could not initiate M-Pesa request. Please try again.')
-        except Exception as e:
-            logger.exception('M-Pesa STK push failed')
-            messages.error(request, 'M-Pesa service unavailable. Please try again.')
+                messages.success(request, f'Airtel Money prompt sent to {phone}. Enter your Airtel PIN to complete.')
+            except Exception:
+                logger.exception('Airtel collection request failed')
+                messages.error(request, 'Airtel Money service unavailable. Please try again.')
+
+        else:
+            # ── Safaricom M-Pesa STK push ──
+            idempotency_key = str(uuid.uuid4())
+            try:
+                client = MpesaClient()
+                response = client.stk_push(
+                    phone=phone, amount=float(amount),
+                    account_ref=wallet.wallet_id,
+                    transaction_desc='KWallet Deposit',
+                )
+                checkout_id = response.get('CheckoutRequestID', '')
+                if checkout_id:
+                    MpesaTransaction.objects.create(
+                        wallet=wallet,
+                        checkout_request_id=checkout_id,
+                        merchant_request_id=response.get('MerchantRequestID', ''),
+                        amount=amount,
+                        phone=phone,
+                        status='pending',
+                        transaction_type='mpesa_deposit',
+                        timeout_at=timezone.now() + timezone.timedelta(minutes=30),
+                    )
+                    messages.success(request, f'M-Pesa prompt sent to {phone}. Enter your PIN to complete.')
+                else:
+                    messages.error(request, 'Could not initiate M-Pesa request. Please try again.')
+            except Exception as e:
+                logger.exception('M-Pesa STK push failed')
+                messages.error(request, 'M-Pesa service unavailable. Please try again.')
 
         return redirect('mpesa_deposit')
 
     return render(request, 'wallet/mpesa_deposit.html', {
         'wallet': wallet,
         'mock_mode': mock_mode,
-        'home_currency': wallet.home_currency,
+        'home_currency': wallet.home_currency or 'KES',
         'rates_stale': rates_are_stale(),
     })
 
@@ -392,7 +420,7 @@ def mpesa_deposit_view(request, wallet):
 @wallet_required
 def airtel_deposit_view(request, wallet):
     if request.method == 'POST':
-        allowed, _ = _check_rate_limit('deposit', str(wallet.id), 10, 3600)
+        allowed, _ = _check_rate_limit('deposit', str(wallet.wallet_id), 10, 3600)
         if not allowed:
             messages.error(request, 'Too many deposit requests. Please wait.')
             return redirect('mpesa_deposit')
@@ -447,37 +475,102 @@ def bank_deposit_notify_view(request, wallet):
         amount_str = request.POST.get('amount', '').strip()
         bank_name  = request.POST.get('bank_name', '').strip()
         bank_ref   = request.POST.get('bank_ref', '').strip()
+        account_number = request.POST.get('account_number', '').strip()
+
+        if not bank_name:
+            messages.error(request, 'Bank name is required.')
+            return redirect('mpesa_deposit')
+        if not bank_ref:
+            messages.error(request, 'Transaction reference / receipt is required.')
+            return redirect('mpesa_deposit')
+
         try:
             amount = Decimal(amount_str)
+            if amount <= 0:
+                raise InvalidOperation
         except (InvalidOperation, TypeError):
             messages.error(request, 'Invalid amount.')
             return redirect('mpesa_deposit')
 
-        BankTransaction.objects.create(
-            wallet=wallet,
-            pesalink_ref=bank_ref or str(uuid.uuid4()),
-            amount=amount,
-            bank_name=bank_name,
-            account_number='',
-            account_name='',
-            status='pending',
-            transaction_type='bank_deposit',
-            timeout_at=timezone.now() + timezone.timedelta(hours=4),
-        )
-        Transaction.objects.create(
-            wallet=wallet,
-            transaction_type='bank_deposit',
-            currency='KES',
-            amount=amount,
-            fee=0,
-            status='pending',
-            details=f'Bank deposit — {bank_name}, ref {bank_ref}',
-            external_ref=bank_ref,
-        )
-        messages.success(request, 'Deposit notification received. Funds will be credited once confirmed by our team (usually within 2 hours).')
+        # Check for duplicate reference
+        if BankTransaction.objects.filter(pesalink_ref=bank_ref).exists():
+            messages.error(request, 'This transaction reference has already been submitted.')
+            return redirect('mpesa_deposit')
+
+        with db_transaction.atomic():
+            BankTransaction.objects.create(
+                wallet=wallet,
+                pesalink_ref=bank_ref,
+                amount=amount,
+                bank_name=bank_name,
+                account_number=account_number or '',
+                account_name=wallet.wallet_user.get_full_name() if wallet.wallet_user else '',
+                status='pending',
+                transaction_type='bank_deposit',
+                timeout_at=timezone.now() + timezone.timedelta(hours=4),
+            )
+            Transaction.objects.create(
+                wallet=wallet,
+                transaction_type='bank_deposit',
+                currency='KES',
+                amount=amount,
+                fee=0,
+                status='pending',
+                details=f'Bank deposit — {bank_name}, ref {bank_ref}',
+                external_ref=bank_ref,
+            )
+        messages.success(request, 'Deposit notification received. Funds will be credited once confirmed by our team (usually within 2 hours). Reference: ' + bank_ref)
         return redirect('mpesa_deposit')
 
     return redirect('mpesa_deposit')
+
+
+@csrf_exempt
+@require_POST
+def bank_deposit_webhook(request):
+    """
+    Webhook for bank/PesaLink to notify confirmed deposits.
+    Expects JSON: {pesalink_ref, amount, status}
+    """
+    try:
+        body = json.loads(request.body)
+        ref    = body.get('pesalink_ref', '')
+        status = body.get('status', '')
+        amount = Decimal(str(body.get('amount', 0)))
+    except (json.JSONDecodeError, InvalidOperation):
+        return JsonResponse({'error': 'bad payload'}, status=400)
+
+    try:
+        with db_transaction.atomic():
+            btxn = BankTransaction.objects.select_for_update().get(
+                pesalink_ref=ref, status='pending'
+            )
+            if status == 'confirmed':
+                btxn.status = 'completed'
+                btxn.save()
+                _credit_balance(btxn.wallet, 'KES', amount, 'bank_deposit',
+                                external_ref=ref, fee=Decimal('0'))
+                _pool_in(btxn.wallet, 'KES', amount, ref)
+                # Update pending Transaction record
+                Transaction.objects.filter(
+                    wallet=btxn.wallet,
+                    transaction_type='bank_deposit',
+                    external_ref=ref,
+                    status='pending',
+                ).update(status='completed')
+            elif status == 'failed':
+                btxn.status = 'failed'
+                btxn.save()
+                Transaction.objects.filter(
+                    wallet=btxn.wallet,
+                    transaction_type='bank_deposit',
+                    external_ref=ref,
+                    status='pending',
+                ).update(status='failed')
+    except BankTransaction.DoesNotExist:
+        return JsonResponse({'error': 'not found'}, status=404)
+
+    return JsonResponse({'status': 'ok'})
 
 
 # ─────────────────────────────────────────────
@@ -668,7 +761,7 @@ def withdraw_view(request, wallet):
         'wallet':          wallet,
         'bank_choices':    BANK_CHOICES,
         'kes_balance':     kes_balance,
-        'home_currency':   wallet.home_currency,
+        'home_currency':   wallet.home_currency or 'KES',
         'rates_stale':     rates_are_stale(),
         'daily_withdrawn': daily_withdrawn,
         'daily_limit':     DAILY_WITHDRAW_LIMIT,
@@ -691,7 +784,7 @@ def mpesa_withdraw_view(request, wallet):
         return redirect('withdraw')
 
     # Risk #08: rate limit withdrawals
-    allowed, _ = _check_rate_limit('withdraw', str(wallet.id), 10, 3600)
+    allowed, _ = _check_rate_limit('withdraw', str(wallet.wallet_id), 10, 3600)
     if not allowed:
         messages.error(request, 'Too many withdrawal requests. Please try again later.')
         return redirect('withdraw')
@@ -774,7 +867,7 @@ def airtel_withdraw_view(request, wallet):
         messages.error(request, 'Identity verification required before withdrawals.')
         return redirect('withdraw')
 
-    allowed, _ = _check_rate_limit('withdraw', str(wallet.id), 10, 3600)
+    allowed, _ = _check_rate_limit('withdraw', str(wallet.wallet_id), 10, 3600)
     if not allowed:
         messages.error(request, 'Too many withdrawal requests.')
         return redirect('withdraw')
@@ -849,7 +942,7 @@ def bank_withdraw_view(request, wallet):
         messages.error(request, 'Identity verification required.')
         return redirect('withdraw')
 
-    allowed, _ = _check_rate_limit('withdraw', str(wallet.id), 5, 3600)
+    allowed, _ = _check_rate_limit('withdraw', str(wallet.wallet_id), 5, 3600)
     if not allowed:
         messages.error(request, 'Too many withdrawal requests.')
         return redirect('withdraw')
@@ -920,8 +1013,23 @@ def bank_withdraw_view(request, wallet):
 
 
 # ─────────────────────────────────────────────
-# STK Query (manual poll)
+# Bank — unified deposit + withdrawal page
 # ─────────────────────────────────────────────
+
+@wallet_required
+def bank_view(request, wallet):
+    """Unified bank page — shows both deposit and withdrawal."""
+    kes_balance = wallet.get_kes_balance()
+    return render(request, 'wallet/bank.html', {
+        'wallet':           wallet,
+        'kes_balance':      kes_balance,
+        'bank_choices':     BANK_CHOICES,
+        'bank_withdraw_fee': BANK_WITHDRAW_FEE,
+        'rates_stale':      rates_are_stale(),
+    })
+
+
+
 
 @wallet_required
 def stk_query_view(request, wallet):
@@ -1040,7 +1148,7 @@ def exchange_view(request, wallet):
     return render(request, 'wallet/exchange.html', {
         'wallet': wallet,
         'balances': balances,
-        'home_currency': wallet.home_currency,
+        'home_currency': wallet.home_currency or 'KES',
         'rates_stale': stale,
     })
 
@@ -1058,7 +1166,7 @@ def p2p_view(request, wallet):
             messages.error(request, 'KYC required for transfers.')
             return redirect('p2p')
 
-        allowed, _ = _check_rate_limit('p2p', str(wallet.id), 20, 3600)
+        allowed, _ = _check_rate_limit('p2p', str(wallet.wallet_id), 20, 3600)
         if not allowed:
             messages.error(request, 'Too many transfer requests.')
             return redirect('p2p')
@@ -1145,7 +1253,7 @@ def p2p_view(request, wallet):
     return render(request, 'wallet/p2p.html', {
         'wallet': wallet,
         'balances': balances,
-        'home_currency': wallet.home_currency,
+        'home_currency': wallet.home_currency or 'KES',
         'daily_withdrawn': float(wallet.get_daily_withdrawn()),
         'daily_limit': DAILY_WITHDRAW_LIMIT,
         'daily_pct': wallet.get_daily_pct(),
@@ -1165,15 +1273,21 @@ def add_currency_view(request, wallet):
             messages.error(request, f'Maximum of {MAX_CURRENCIES} currencies allowed.')
             return redirect('add_currency')
         currency = request.POST.get('currency', '').strip().upper()
+        set_home = request.POST.get('set_home') == '1'
         all_valid = [c for c, _ in EA_CURRENCIES + INTL_CURRENCIES]
         if currency not in all_valid:
             messages.error(request, 'Invalid currency.')
             return redirect('add_currency')
-        if currency in active:
-            messages.error(request, f'{currency} is already in your wallet.')
-            return redirect('add_currency')
-        CurrencyBalance.objects.create(wallet=wallet, currency=currency, balance=0)
+        if currency not in active:
+            CurrencyBalance.objects.create(wallet=wallet, currency=currency, balance=0)
+            active.append(currency)
+        # Set as home currency if requested or wallet has no home currency yet
+        if set_home or not wallet.home_currency:
+            wallet.home_currency = currency
+            wallet.save(update_fields=['home_currency'])
         messages.success(request, f'{currency} added to your wallet.')
+        if not wallet.home_currency:
+            return redirect('add_currency')
         return redirect('dashboard')
 
     return render(request, 'wallet/add_currency.html', {
@@ -1183,7 +1297,28 @@ def add_currency_view(request, wallet):
         'max_currencies': MAX_CURRENCIES,
         'ea_currencies': EA_CURRENCIES,
         'intl_currencies': INTL_CURRENCIES,
+        'no_home_currency': not wallet.home_currency,
     })
+
+
+@wallet_required
+def remove_currency_view(request, wallet):
+    """Allow removing a currency (cannot remove home currency or currencies with balance)."""
+    if request.method == 'POST':
+        currency = request.POST.get('currency', '').strip().upper()
+        if currency == wallet.home_currency:
+            messages.error(request, f'You cannot remove your home currency ({currency}). Change your home currency first.')
+            return redirect('add_currency')
+        try:
+            cb = wallet.currency_balances.get(currency=currency)
+            if cb.balance > 0:
+                messages.error(request, f'Cannot remove {currency} — balance is {cb.balance}. Exchange or transfer funds first.')
+                return redirect('add_currency')
+            cb.delete()
+            messages.success(request, f'{currency} removed from your wallet.')
+        except CurrencyBalance.DoesNotExist:
+            messages.error(request, f'{currency} not found in your wallet.')
+    return redirect('add_currency')
 
 
 # ─────────────────────────────────────────────
@@ -1323,29 +1458,60 @@ def qr_pay_view(request, token):
         return render(request, 'wallet/qr_expired.html')
 
     if request.method == 'POST':
-        phone  = request.POST.get('phone', '').strip()
-        amount = req.amount or Decimal(request.POST.get('amount', '0'))
+        rail  = request.POST.get('rail', '')
+        phone = request.POST.get('phone', '').strip()
+        amount_str = request.POST.get('amount', '')
         try:
+            amount = req.amount if req.amount else Decimal(str(amount_str))
             amount = Decimal(str(amount))
-        except InvalidOperation:
+            if amount <= 0:
+                raise InvalidOperation
+        except (InvalidOperation, TypeError, ValueError):
             messages.error(request, 'Invalid amount.')
             return render(request, 'wallet/qr_pay.html', {'req': req, 'token': token})
 
+        if not rail:
+            messages.error(request, 'Please choose a payment method.')
+            return render(request, 'wallet/qr_pay.html', {'req': req, 'token': token})
+
         reference = 'QR' + uuid.uuid4().hex[:10].upper()
-        try:
-            client = MpesaClient()
-            client.stk_push(phone=phone, amount=float(amount),
-                            account_ref=req.wallet.wallet_id,
-                            transaction_desc=f'KWallet QR {req.note or token[:8]}')
-            if req.single_use:
-                req.status = 'paid'
-                req.save()
-            return render(request, 'wallet/qr_pay_pending.html', {
-                'phone': phone, 'amount': amount,
-                'reference': reference, 'token': token,
-            })
-        except Exception:
-            messages.error(request, 'Payment initiation failed. Please try again.')
+
+        if rail == 'airtel':
+            try:
+                airtel_client = AirtelClient()
+                if not airtel_client.validate_ke_number(phone):
+                    messages.error(request, 'Please enter a valid Airtel Kenya number (073x, 075x, 078x).')
+                    return render(request, 'wallet/qr_pay.html', {'req': req, 'token': token})
+                airtel_client.collection_request(
+                    phone=phone, amount=float(amount),
+                    ref=req.wallet.wallet_id, idempotency_key=reference,
+                )
+                if req.single_use:
+                    req.status = 'paid'
+                    req.save()
+                return render(request, 'wallet/qr_pay_pending.html', {
+                    'phone': phone, 'amount': amount,
+                    'reference': reference, 'token': token, 'rail': 'Airtel Money',
+                })
+            except Exception:
+                messages.error(request, 'Airtel Money payment initiation failed. Please try again.')
+        else:
+            try:
+                client = MpesaClient()
+                client.stk_push(
+                    phone=phone, amount=float(amount),
+                    account_ref=req.wallet.wallet_id,
+                    transaction_desc=f'KWallet QR {req.note or token[:8]}',
+                )
+                if req.single_use:
+                    req.status = 'paid'
+                    req.save()
+                return render(request, 'wallet/qr_pay_pending.html', {
+                    'phone': phone, 'amount': amount,
+                    'reference': reference, 'token': token, 'rail': 'M-Pesa',
+                })
+            except Exception:
+                messages.error(request, 'M-Pesa payment initiation failed. Please try again.')
 
     return render(request, 'wallet/qr_pay.html', {'req': req, 'token': token})
 
@@ -1356,9 +1522,60 @@ def qr_pay_view(request, token):
 
 @wallet_required
 def kyc_start_view(request, wallet):
-    """Risk #15: KYC entry point. In production: integrate Smile Identity / Onfido."""
+    """Risk #15: KYC with document upload. In production: integrate Smile Identity / Onfido."""
     if request.method == 'POST':
-        # Placeholder: mark as pending review
+        full_name  = request.POST.get('full_name', '').strip()
+        id_number  = request.POST.get('id_number', '').strip()
+        dob_str    = request.POST.get('dob', '').strip()
+        id_front   = request.FILES.get('id_front')
+        id_back    = request.FILES.get('id_back')
+        selfie     = request.FILES.get('selfie')
+
+        errors = []
+        if not full_name:
+            errors.append('Full legal name is required.')
+        if not id_number:
+            errors.append('ID / Passport number is required.')
+        if not dob_str:
+            errors.append('Date of birth is required.')
+        if not id_front:
+            errors.append('Front photo of your ID is required.')
+        if not id_back:
+            errors.append('Back photo of your ID is required.')
+        if not selfie:
+            errors.append('Selfie holding your ID is required.')
+
+        # Validate file types
+        allowed_types = ['image/jpeg', 'image/png', 'image/webp']
+        for label, f in [('ID front', id_front), ('ID back', id_back), ('Selfie', selfie)]:
+            if f and f.content_type not in allowed_types:
+                errors.append(f'{label}: only JPEG, PNG or WebP images are accepted.')
+            if f and f.size > 10 * 1024 * 1024:  # 10 MB
+                errors.append(f'{label}: file must be under 10 MB.')
+
+        if errors:
+            for e in errors:
+                messages.error(request, e)
+            return render(request, 'wallet/kyc_start.html', {'wallet': wallet})
+
+        try:
+            from django.utils.dateparse import parse_date
+            dob = parse_date(dob_str)
+        except Exception:
+            dob = None
+
+        wallet.kyc_full_name = full_name
+        wallet.kyc_id_number = id_number
+        wallet.kyc_dob       = dob
+        if id_front:
+            wallet.kyc_id_front = id_front
+        if id_back:
+            wallet.kyc_id_back = id_back
+        if selfie:
+            wallet.kyc_selfie = selfie
+        wallet.kyc_status = 'pending'
+        wallet.save()
+
         messages.info(request, 'KYC submission received. Verification usually takes less than 5 minutes.')
         return redirect('dashboard')
     return render(request, 'wallet/kyc_start.html', {'wallet': wallet})

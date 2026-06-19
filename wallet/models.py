@@ -217,9 +217,17 @@ class Wallet(models.Model):
     )
     # Fields added in 0007
     wallet_id_str   = models.CharField(max_length=20, unique=True, null=True, blank=True)
-    home_currency   = models.CharField(max_length=3, default='KES')
+    home_currency   = models.CharField(max_length=3, default='', blank=True)
     kyc_verified_at = models.DateTimeField(null=True, blank=True)
     updated_at      = models.DateTimeField(auto_now=True, null=True)
+
+    # KYC document uploads (Risk #15)
+    kyc_id_front    = models.ImageField(upload_to='kyc/id/', null=True, blank=True)
+    kyc_id_back     = models.ImageField(upload_to='kyc/id/', null=True, blank=True)
+    kyc_selfie      = models.ImageField(upload_to='kyc/selfie/', null=True, blank=True)
+    kyc_full_name   = models.CharField(max_length=160, blank=True)
+    kyc_id_number   = models.CharField(max_length=60, blank=True)
+    kyc_dob         = models.DateField(null=True, blank=True)
 
     def __str__(self):
         return f"Wallet({self.wallet_id}) — {self.phone}"
