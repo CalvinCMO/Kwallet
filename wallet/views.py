@@ -12,6 +12,7 @@ from functools import wraps
 
 from django.contrib import messages
 from django.contrib.auth import login as auth_login, logout as auth_logout
+from django.contrib.auth.decorators import login_required
 from django.core.cache import cache
 from django.core.paginator import Paginator
 from django.db import transaction as db_transaction
@@ -238,6 +239,7 @@ def register_view(request):
                 WalletLimit.objects.create(wallet=wallet)
 
             auth_login(request, user, backend='django.contrib.auth.backends.ModelBackend')
+            user.register_session(request.session.session_key)
             messages.success(request, f'Welcome, {first_name}! Please add at least one currency to your wallet, then complete KYC.')
             return redirect('add_currency')
         except Exception as e:
@@ -254,11 +256,16 @@ def login_view(request):
     if request.user.is_authenticated:
         if Wallet.objects.filter(wallet_user=request.user).exists():
             return redirect('dashboard')
-        # Authenticated but no wallet (e.g. an interrupted/failed past
-        # registration) — log them out instead of bouncing forever
-        # between login and dashboard.
         auth_logout(request)
         messages.error(request, 'Your account has no wallet on file. Please register again or contact support.')
+
+    # Surface middleware-injected messages from previous request
+    idle_msg   = request.session.pop('idle_timeout_msg', None)
+    device_msg = request.session.pop('device_kick_msg', None)
+    if idle_msg:
+        messages.warning(request, idle_msg)
+    if device_msg:
+        messages.error(request, device_msg)
 
     locked_until = None
     error = False
@@ -288,7 +295,13 @@ def login_view(request):
 
             if user.check_pin(pin):
                 user.record_successful_login()
+                # Rotate session to prevent fixation (clears old session data)
+                request.session.cycle_key()
                 auth_login(request, user, backend='django.contrib.auth.backends.ModelBackend')
+                # ── Single-device enforcement: register this session ──────────
+                # register_session must be called AFTER auth_login so that
+                # request.session.session_key is finalised.
+                user.register_session(request.session.session_key)
                 return redirect('dashboard')
             else:
                 user.record_failed_login()
@@ -310,8 +323,29 @@ def login_view(request):
 
 
 def logout_view(request):
+    if request.user.is_authenticated:
+        try:
+            # Clear the single-device session token so re-login works cleanly
+            request.user.active_session_key = ''
+            request.user.save(update_fields=['active_session_key'])
+        except Exception:
+            pass
     auth_logout(request)
     return redirect('login')
+
+
+@require_POST
+@login_required
+def idle_ping_view(request):
+    """
+    Lightweight heartbeat endpoint called by the JS idle timer.
+    Updates last_activity so the server-side idle check stays in sync.
+    """
+    try:
+        request.user.touch_activity()
+    except Exception:
+        logger.exception('idle_ping touch_activity failed')
+    return JsonResponse({'ok': True})
 
 
 # ─────────────────────────────────────────────

@@ -604,5 +604,113 @@
 {% endif %}
 
 <main>{% block content %}{% endblock %}</main>
+
+{% if user.is_authenticated %}
+{# ── Idle Timeout Warning Toast ─────────────────────────────────────────── #}
+<div id="idle-toast" style="
+  display:none;position:fixed;bottom:80px;left:50%;transform:translateX(-50%);
+  background:#1a202c;color:#fff;border-radius:12px;padding:.85rem 1.25rem;
+  box-shadow:0 8px 24px rgba(0,0,0,.25);z-index:9999;
+  min-width:280px;max-width:340px;text-align:center;
+  border:2px solid var(--amber,#C07B1A);
+">
+  <div style="font-size:.85rem;font-weight:700;color:var(--amber,#C07B1A);margin-bottom:.3rem">
+    ⏱️ Inactivity warning
+  </div>
+  <div style="font-size:.8rem;color:#e2e8f0">
+    You'll be logged out in <strong id="idle-countdown">60</strong> seconds.
+  </div>
+  <button onclick="kwResetIdle()" style="
+    margin-top:.65rem;padding:.4rem 1.1rem;border-radius:8px;
+    background:var(--teal);color:#fff;border:none;font-size:.78rem;
+    font-weight:700;cursor:pointer;
+  ">Stay logged in</button>
+</div>
+
+<script>
+(function () {
+  // ── Config ────────────────────────────────────────────────────────────────
+  const IDLE_LIMIT_MS  = {{ IDLE_TIMEOUT_SECONDS|default:300 }} * 1000;  // from Django settings
+  const WARN_BEFORE_MS = 60 * 1000;   // show warning 60 s before timeout
+  const PING_URL       = '{% url "idle_ping" %}';  // heartbeat endpoint
+  const LOGOUT_URL     = '{% url "logout" %}';
+
+  // ── State ─────────────────────────────────────────────────────────────────
+  let lastActivity = Date.now();
+  let warnTimer, logoutTimer, countdownInterval;
+  const toast       = document.getElementById('idle-toast');
+  const countdownEl = document.getElementById('idle-countdown');
+
+  // ── Activity events ───────────────────────────────────────────────────────
+  const resetEvents = ['mousemove','keydown','click','touchstart','scroll'];
+  resetEvents.forEach(ev => document.addEventListener(ev, kwResetIdle, {passive:true}));
+
+  function kwResetIdle() {
+    lastActivity = Date.now();
+    hideToast();
+    clearAllTimers();
+    scheduleWarning();
+    // Ping server every time the user resets (throttled to max 1/30s)
+    pingServer();
+  }
+  window.kwResetIdle = kwResetIdle;
+
+  // ── Timers ────────────────────────────────────────────────────────────────
+  function scheduleWarning() {
+    const warnAt = IDLE_LIMIT_MS - WARN_BEFORE_MS;
+    warnTimer = setTimeout(showWarning, warnAt);
+    logoutTimer = setTimeout(forceLogout, IDLE_LIMIT_MS);
+  }
+
+  function showWarning() {
+    let remaining = Math.round(WARN_BEFORE_MS / 1000);
+    countdownEl.textContent = remaining;
+    toast.style.display = 'block';
+    countdownInterval = setInterval(() => {
+      remaining -= 1;
+      if (remaining <= 0) { clearInterval(countdownInterval); return; }
+      countdownEl.textContent = remaining;
+    }, 1000);
+  }
+
+  function hideToast() {
+    toast.style.display = 'none';
+    clearInterval(countdownInterval);
+  }
+
+  function forceLogout() {
+    // Redirect to logout — server will also clean up session
+    window.location.href = LOGOUT_URL + '?reason=idle';
+  }
+
+  function clearAllTimers() {
+    clearTimeout(warnTimer);
+    clearTimeout(logoutTimer);
+    clearInterval(countdownInterval);
+  }
+
+  // ── Server heartbeat (keeps server-side last_activity in sync) ────────────
+  let lastPing = 0;
+  function pingServer() {
+    const now = Date.now();
+    if (now - lastPing < 30000) return;   // max 1 ping per 30 s
+    lastPing = now;
+    fetch(PING_URL, {
+      method: 'POST',
+      headers: { 'X-CSRFToken': getCsrf(), 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+    }).catch(() => {});  // ignore network errors silently
+  }
+
+  function getCsrf() {
+    const m = document.cookie.match(/csrftoken=([^;]+)/);
+    return m ? m[1] : '';
+  }
+
+  // ── Boot ──────────────────────────────────────────────────────────────────
+  scheduleWarning();
+})();
+</script>
+{% endif %}
 </body>
 </html>

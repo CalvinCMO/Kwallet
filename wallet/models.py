@@ -141,6 +141,11 @@ class WalletUser(AbstractBaseUser):
     failed_login_attempts = models.PositiveIntegerField(default=0)
     locked_until          = models.DateTimeField(null=True, blank=True)
 
+    # Single-device session enforcement (Risk #03)
+    active_session_key = models.CharField(max_length=64, blank=True, default='')
+    # Last activity — used for idle timeout tracking server-side
+    last_activity      = models.DateTimeField(null=True, blank=True)
+
     USERNAME_FIELD  = 'phone'
     REQUIRED_FIELDS = []
     objects = WalletUserManager()
@@ -188,6 +193,27 @@ class WalletUser(AbstractBaseUser):
         self.failed_login_attempts = 0
         self.locked_until = None
         self.save(update_fields=['failed_login_attempts', 'locked_until'])
+
+    def register_session(self, session_key: str):
+        """
+        Record the new session as the ONE active session for this user.
+        Any other session with a different key is the 'other device' — it
+        will be invalidated on their next request by the middleware.
+        """
+        self.active_session_key = session_key
+        self.last_activity      = timezone.now()
+        self.save(update_fields=['active_session_key', 'last_activity'])
+
+    def touch_activity(self):
+        """Update last_activity timestamp (called by middleware on each request)."""
+        self.last_activity = timezone.now()
+        self.save(update_fields=['last_activity'])
+
+    def is_idle(self, idle_seconds: int = 300) -> bool:
+        """Return True if user has been idle longer than idle_seconds."""
+        if not self.last_activity:
+            return False
+        return (timezone.now() - self.last_activity).total_seconds() > idle_seconds
 
     def has_perm(self, perm, obj=None):
         return self.is_superuser

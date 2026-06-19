@@ -36,7 +36,13 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     # Risk #08: rate limiting middleware (django-axes or custom, configured below)
+    # ── KWallet custom session security ──────────────────────────────────────
+    'wallet.middleware.SingleDeviceMiddleware',   # one active session per user
+    'wallet.middleware.IdleTimeoutMiddleware',    # auto-logout after 5 min idle
 ]
+
+# ── Idle timeout — 5 minutes (300 seconds) ──────────────────────────────────
+IDLE_TIMEOUT_SECONDS = 300
 
 ROOT_URLCONF = 'kwallet.urls'
 
@@ -49,6 +55,7 @@ TEMPLATES = [{
         'django.template.context_processors.request',
         'django.contrib.auth.context_processors.auth',
         'django.contrib.messages.context_processors.messages',
+        'wallet.middleware.idle_timeout_context',   # IDLE_TIMEOUT_SECONDS in all templates
     ]},
 }]
 
