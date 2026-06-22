@@ -1,0 +1,183 @@
+{% extends "wallet/base.html" %}
+{% block title %}🧪 Sandbox Test Panel — KWallet{% endblock %}
+{% block content %}
+<div class="page-sm">
+
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+    <div>
+      <div style="font-size:.72rem;color:var(--amber,#B45309);font-weight:700;letter-spacing:.05em;margin-bottom:2px">🧪 SANDBOX MODE</div>
+      <h1 style="font-size:1.4rem;font-weight:800;color:var(--ink);letter-spacing:-.03em">Test Panel</h1>
+    </div>
+    <a href="{% url 'dashboard' %}" class="back-btn">← Dashboard</a>
+  </div>
+
+  <div class="msg msg-warning" style="margin-bottom:1rem;font-size:.82rem">
+    All actions here use <strong>mock rails</strong>. No real M-Pesa, Airtel, or bank requests are made.
+    Receipts are prefixed <code>MOCK_</code> so they're easy to identify in logs.
+  </div>
+
+  {% if messages %}
+  <div class="msgs">{% for m in messages %}<div class="msg msg-{{ m.tags }}">{{ m }}</div>{% endfor %}</div>
+  {% endif %}
+
+  {# ── Current Balances ── #}
+  <div class="card" style="margin-bottom:1rem">
+    <div class="card-title">Current Sandbox Balances</div>
+    {% if balances %}
+    <div style="display:flex;flex-direction:column;gap:.45rem;margin-top:.5rem">
+      {% for cb in balances %}
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:.4rem .6rem;background:var(--surface);border-radius:8px;font-size:.85rem">
+        <span style="font-weight:600">{{ cb.currency }}</span>
+        <span style="font-family:'JetBrains Mono',monospace;font-weight:700;color:var(--teal-dk)">{{ cb.balance|floatformat:2 }}</span>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div style="color:var(--ink-3);font-size:.82rem;padding:.4rem 0">No currencies added yet. <a href="{% url 'add_currency' %}">Add one →</a></div>
+    {% endif %}
+  </div>
+
+  {# ── Quick Actions ── #}
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:1rem">
+
+    {# Seed balances #}
+    <div class="card">
+      <div class="card-title" style="font-size:.78rem">🌱 Seed Starting Balances</div>
+      <div style="font-size:.75rem;color:var(--ink-3);margin-bottom:.65rem">
+        Credits each currency with its default starting amount:
+        {% for curr, amt in sandbox_starting.items %}{{ curr }} {{ amt }}{% if not forloop.last %}, {% endif %}{% endfor %}.
+        Only runs if the balance is currently zero.
+      </div>
+      <button onclick="sandboxAction('{% url 'sandbox_seed' %}', {})" class="btn btn-primary btn-block" style="font-size:.82rem">
+        Seed All Currencies
+      </button>
+    </div>
+
+    {# Reset balances #}
+    <div class="card">
+      <div class="card-title" style="font-size:.78rem">🔄 Reset All Balances</div>
+      <div style="font-size:.75rem;color:var(--ink-3);margin-bottom:.65rem">
+        Zeros every currency balance and clears mock transaction records.
+        Useful to test KYC withdrawal limits or insufficient-funds paths.
+      </div>
+      <button onclick="if(confirm('Reset all balances to zero?')) sandboxAction('{% url 'sandbox_reset' %}', {})"
+              class="btn btn-block" style="font-size:.82rem;background:var(--danger,#e53e3e);color:#fff;border:none;border-radius:8px;padding:.6rem;cursor:pointer">
+        Reset to Zero
+      </button>
+    </div>
+  </div>
+
+  {# ── Mock Deposit ── #}
+  <div class="card" style="margin-bottom:1rem">
+    <div class="card-title">⬇️ Mock Deposit (STK Push)</div>
+    <div style="font-size:.78rem;color:var(--ink-3);margin-bottom:.75rem">
+      Simulates a successful M-Pesa or Airtel Money collection. Credits the chosen currency instantly.
+    </div>
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:.6rem">
+      <select id="dep-rail" class="fi" style="flex:1;min-width:100px">
+        <option value="mpesa">M-Pesa</option>
+        <option value="airtel">Airtel Money</option>
+      </select>
+      <select id="dep-currency" class="fi" style="flex:1;min-width:80px">
+        {% for curr in all_currencies %}
+        <option value="{{ curr }}" {% if curr == wallet.home_currency %}selected{% endif %}>{{ curr }}</option>
+        {% endfor %}
+      </select>
+      <input id="dep-amount" type="number" class="fi" placeholder="Amount" min="1" value="1000" style="flex:1;min-width:90px">
+    </div>
+    <button onclick="sandboxAction('{% url 'sandbox_deposit' %}', {rail: depRail(), currency: depCurr(), amount: depAmt()})"
+            class="btn btn-primary btn-block" style="font-size:.82rem">
+      Simulate Deposit →
+    </button>
+  </div>
+
+  {# ── Mock Withdrawal ── #}
+  <div class="card" style="margin-bottom:1rem">
+    <div class="card-title">⬆️ Mock Withdrawal (B2C)</div>
+    <div style="font-size:.78rem;color:var(--ink-3);margin-bottom:.75rem">
+      Simulates a successful M-Pesa or Airtel B2C disbursement. Deducts from balance immediately.
+    </div>
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:.6rem">
+      <select id="wd-rail" class="fi" style="flex:1;min-width:100px">
+        <option value="mpesa">M-Pesa</option>
+        <option value="airtel">Airtel Money</option>
+      </select>
+      <select id="wd-currency" class="fi" style="flex:1;min-width:80px">
+        {% for curr in all_currencies %}
+        <option value="{{ curr }}" {% if curr == wallet.home_currency %}selected{% endif %}>{{ curr }}</option>
+        {% endfor %}
+      </select>
+      <input id="wd-amount" type="number" class="fi" placeholder="Amount" min="1" value="500" style="flex:1;min-width:90px">
+    </div>
+    <button onclick="sandboxAction('{% url 'sandbox_withdraw' %}', {rail: wdRail(), currency: wdCurr(), amount: wdAmt()})"
+            class="btn btn-block" style="font-size:.82rem;background:var(--teal-dk);color:#fff;border:none;border-radius:8px;padding:.6rem;cursor:pointer">
+      Simulate Withdrawal →
+    </button>
+  </div>
+
+  {# ── Mock Bank Deposit ── #}
+  <div class="card" style="margin-bottom:1rem">
+    <div class="card-title">🏦 Mock Bank Deposit (PesaLink)</div>
+    <div style="font-size:.78rem;color:var(--ink-3);margin-bottom:.75rem">
+      Simulates a confirmed PesaLink/RTGS bank deposit. Credits KES instantly without requiring a webhook.
+    </div>
+    <div style="display:flex;gap:.5rem;margin-bottom:.6rem">
+      <input id="bank-amount" type="number" class="fi" placeholder="KES Amount" min="500" value="5000" style="flex:1">
+    </div>
+    <button onclick="sandboxAction('{% url 'sandbox_bank_deposit' %}', {amount: bankAmt()})"
+            class="btn btn-block" style="font-size:.82rem;background:#2563EB;color:#fff;border:none;border-radius:8px;padding:.6rem;cursor:pointer">
+      Simulate Bank Deposit →
+    </button>
+  </div>
+
+  {# ── Recent mock transactions ── #}
+  {% if recent %}
+  <div class="card">
+    <div class="card-title">Recent Sandbox Transactions</div>
+    <div style="display:flex;flex-direction:column;gap:.4rem;margin-top:.5rem">
+      {% for txn in recent %}
+      <div style="font-size:.78rem;padding:.4rem .55rem;background:var(--surface);border-radius:7px;display:flex;justify-content:space-between;align-items:center">
+        <div>
+          <span style="font-weight:600;color:var(--ink)">{{ txn.transaction_type }}</span>
+          <span style="color:var(--ink-3);margin-left:.4rem">{{ txn.external_ref }}</span>
+        </div>
+        <div>
+          <span style="font-weight:700;color:{% if txn.transaction_type|slice:'-7:' == 'deposit' %}var(--teal-dk){% else %}var(--danger,#e53e3e){% endif %}">
+            {{ txn.currency }} {{ txn.amount|floatformat:2 }}
+          </span>
+          <span style="color:var(--ink-4);font-size:.7rem;margin-left:.4rem">{{ txn.created_at|date:"H:i" }}</span>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="ibox" style="margin-top:1rem;font-size:.75rem">
+    💡 <strong>Going live?</strong> Set <code>WALLET_SANDBOX_MODE=False</code> in your Railway environment variables.
+    This panel and all mock rails will be disabled automatically. Individual test accounts can keep
+    <code>wallet.is_sandbox=True</code> via the admin panel even in production.
+  </div>
+
+</div>
+
+<script>
+const csrf = () => document.cookie.match(/csrftoken=([^;]+)/)?.[1] || '';
+
+function sandboxAction(url, data) {
+  const body = new URLSearchParams({csrfmiddlewaretoken: csrf(), ...data});
+  fetch(url, {method:'POST', body, credentials:'same-origin'})
+    .then(r => r.json())
+    .then(d => { window.location.reload(); })
+    .catch(e => alert('Error: ' + e));
+}
+
+const depRail = () => document.getElementById('dep-rail').value;
+const depCurr = () => document.getElementById('dep-currency').value;
+const depAmt  = () => document.getElementById('dep-amount').value;
+const wdRail  = () => document.getElementById('wd-rail').value;
+const wdCurr  = () => document.getElementById('wd-currency').value;
+const wdAmt   = () => document.getElementById('wd-amount').value;
+const bankAmt = () => document.getElementById('bank-amount').value;
+</script>
+{% endblock %}

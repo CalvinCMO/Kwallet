@@ -606,7 +606,23 @@
 <main>{% block content %}{% endblock %}</main>
 
 {% if user.is_authenticated %}
-{# ── Idle Timeout Warning Toast ─────────────────────────────────────────── #}
+{# ── Sandbox Mode Banner ────────────────────────────────────────────────── #}
+{% if GLOBAL_SANDBOX_MODE or wallet.is_sandbox %}
+<div id="sandbox-banner" style="
+  background:linear-gradient(90deg,#92400e,#b45309);
+  color:#fef3c7;font-size:.75rem;font-weight:700;
+  text-align:center;padding:.35rem 1rem;letter-spacing:.04em;
+  display:flex;align-items:center;justify-content:center;gap:.75rem;
+  position:sticky;top:0;z-index:1000;
+">
+  <span>🧪 SANDBOX MODE — No real money. All transactions are simulated.</span>
+  <a href="{% url 'sandbox_panel' %}" style="
+    background:#fef3c7;color:#92400e;border-radius:6px;
+    padding:.15rem .6rem;font-size:.72rem;font-weight:800;text-decoration:none;
+  ">Test Panel →</a>
+</div>
+{% endif %}
+{% endif %}
 <div id="idle-toast" style="
   display:none;position:fixed;bottom:80px;left:50%;transform:translateX(-50%);
   background:#1a202c;color:#fff;border-radius:12px;padding:.85rem 1.25rem;

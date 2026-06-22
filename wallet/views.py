@@ -32,6 +32,10 @@ from .models import (
 )
 from .mpesa import MpesaClient
 from .rates import get_rates, get_pair_rate, rates_are_stale
+from . import sandbox as _sandbox
+from django.conf import settings as _settings
+
+SANDBOX_MODE = getattr(_settings, 'WALLET_SANDBOX_MODE', True)
 
 logger = logging.getLogger(__name__)
 
@@ -387,6 +391,12 @@ def mpesa_deposit_view(request, wallet):
 
         if deposit_method == 'airtel':
             # ── Airtel STK / collection push ──
+            if _sandbox.is_sandbox(wallet):
+                result = _sandbox.mock_stk_push(wallet, amount, currency='KES', rail='airtel',
+                                                 phone=phone)
+                messages.success(request, f'🧪 [Sandbox] {result["message"]}')
+                return redirect('mpesa_deposit')
+
             airtel_client = AirtelClient()
             if not airtel_client.validate_ke_number(phone):
                 messages.error(request, 'Please enter a valid Airtel Kenya number (073x, 075x, 078x).')
@@ -410,6 +420,12 @@ def mpesa_deposit_view(request, wallet):
 
         else:
             # ── Safaricom M-Pesa STK push ──
+            if _sandbox.is_sandbox(wallet):
+                result = _sandbox.mock_stk_push(wallet, amount, currency='KES', rail='mpesa',
+                                                 phone=phone)
+                messages.success(request, f'🧪 [Sandbox] {result["message"]}')
+                return redirect('mpesa_deposit')
+
             idempotency_key = str(uuid.uuid4())
             try:
                 client = MpesaClient()
@@ -1315,6 +1331,9 @@ def add_currency_view(request, wallet):
         if currency not in active:
             CurrencyBalance.objects.create(wallet=wallet, currency=currency, balance=0)
             active.append(currency)
+            # Auto-seed sandbox starting balance for new currency
+            if _sandbox.is_sandbox(wallet):
+                _sandbox.seed_sandbox_balance(wallet, currency)
         # Set as home currency if requested or wallet has no home currency yet
         if set_home or not wallet.home_currency:
             wallet.home_currency = currency
@@ -1775,3 +1794,149 @@ def _pool_out(wallet, currency, amount, ref=''):
             )
         except Exception:
             logger.exception('Failed to send insolvency alert email')
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SANDBOX / TESTING PANEL
+# Only accessible when WALLET_SANDBOX_MODE=True OR wallet.is_sandbox=True.
+# Completely inert on production wallets.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _sandbox_guard(wallet):
+    """Return True if this request should be allowed in sandbox mode."""
+    return _sandbox.is_sandbox(wallet)
+
+
+@wallet_required
+def sandbox_panel_view(request, wallet):
+    """
+    Tester control panel — visible only to sandbox wallets.
+    Shows current balances, recent sandbox transactions, and action buttons.
+    """
+    if not _sandbox_guard(wallet):
+        messages.error(request, 'Sandbox panel is only available in sandbox mode.')
+        return redirect('dashboard')
+
+    balances = wallet.currency_balances.all().order_by('currency')
+    recent = wallet.transactions.filter(
+        details__icontains='sandbox'
+    ).order_by('-created_at')[:20] | wallet.transactions.filter(
+        external_ref__startswith='MOCK'
+    ).order_by('-created_at')[:20]
+    recent = wallet.transactions.filter(
+        external_ref__startswith='MOCK'
+    ).order_by('-created_at')[:20]
+
+    from .rates import get_rates
+    from .models import EA_CURRENCIES, INTL_CURRENCIES
+    all_currencies = [c for c, _ in EA_CURRENCIES + INTL_CURRENCIES]
+
+    return render(request, 'wallet/sandbox_panel.html', {
+        'wallet': wallet,
+        'balances': balances,
+        'recent': recent,
+        'all_currencies': all_currencies,
+        'sandbox_starting': _sandbox.STARTING_BALANCE,
+        'confirm_delay': _sandbox.CONFIRM_DELAY,
+    })
+
+
+@wallet_required
+@require_POST
+def sandbox_deposit_view(request, wallet):
+    """Mock deposit — credits wallet immediately, no real STK sent."""
+    if not _sandbox_guard(wallet):
+        return JsonResponse({'ok': False, 'error': 'Not in sandbox mode'}, status=403)
+
+    currency = request.POST.get('currency', 'KES').strip().upper()
+    rail     = request.POST.get('rail', 'mpesa').strip()
+    try:
+        amount = Decimal(request.POST.get('amount', '0'))
+        if amount <= 0:
+            raise InvalidOperation
+    except InvalidOperation:
+        return JsonResponse({'ok': False, 'error': 'Invalid amount'}, status=400)
+
+    result = _sandbox.mock_stk_push(wallet, amount, currency=currency, rail=rail)
+    messages.success(request, f'🧪 {result["message"]}')
+    return JsonResponse({'ok': True, **result})
+
+
+@wallet_required
+@require_POST
+def sandbox_withdraw_view(request, wallet):
+    """Mock withdrawal — deducts from balance immediately."""
+    if not _sandbox_guard(wallet):
+        return JsonResponse({'ok': False, 'error': 'Not in sandbox mode'}, status=403)
+
+    currency = request.POST.get('currency', 'KES').strip().upper()
+    rail     = request.POST.get('rail', 'mpesa').strip()
+    try:
+        amount = Decimal(request.POST.get('amount', '0'))
+        if amount <= 0:
+            raise InvalidOperation
+    except InvalidOperation:
+        return JsonResponse({'ok': False, 'error': 'Invalid amount'}, status=400)
+
+    result = _sandbox.mock_b2c_withdraw(wallet, amount, currency=currency, rail=rail)
+    if result['status'] == 'completed':
+        messages.success(request, f'🧪 {result["message"]}')
+    else:
+        messages.error(request, f'🧪 {result["message"]}')
+    return JsonResponse({'ok': result['status'] == 'completed', **result})
+
+
+@wallet_required
+@require_POST
+def sandbox_bank_deposit_view(request, wallet):
+    """Mock bank deposit — credits KES instantly."""
+    if not _sandbox_guard(wallet):
+        return JsonResponse({'ok': False, 'error': 'Not in sandbox mode'}, status=403)
+
+    try:
+        amount = Decimal(request.POST.get('amount', '0'))
+        if amount <= 0:
+            raise InvalidOperation
+    except InvalidOperation:
+        return JsonResponse({'ok': False, 'error': 'Invalid amount'}, status=400)
+
+    result = _sandbox.mock_bank_deposit(wallet, amount)
+    messages.success(request, f'🧪 {result["message"]}')
+    return JsonResponse({'ok': True, **result})
+
+
+@wallet_required
+@require_POST
+def sandbox_seed_view(request, wallet):
+    """Seed sandbox wallet with starting balances for all active currencies."""
+    if not _sandbox_guard(wallet):
+        return JsonResponse({'ok': False, 'error': 'Not in sandbox mode'}, status=403)
+
+    seeded = []
+    for cb in wallet.currency_balances.all():
+        old_balance = cb.balance
+        _sandbox.seed_sandbox_balance(wallet, cb.currency)
+        cb.refresh_from_db()
+        if cb.balance > old_balance:
+            seeded.append(f'{cb.currency} +{cb.balance - old_balance}')
+
+    if seeded:
+        messages.success(request, f'🧪 Seeded: {", ".join(seeded)}')
+    else:
+        messages.info(request, '🧪 All currencies already have balances — no seeding needed.')
+    return JsonResponse({'ok': True, 'seeded': seeded})
+
+
+@wallet_required
+@require_POST
+def sandbox_reset_view(request, wallet):
+    """Reset all sandbox balances back to zero (useful to test edge cases)."""
+    if not _sandbox_guard(wallet):
+        return JsonResponse({'ok': False, 'error': 'Not in sandbox mode'}, status=403)
+
+    with db_transaction.atomic():
+        wallet.currency_balances.update(balance=Decimal('0'))
+        wallet.transactions.filter(external_ref__startswith='MOCK').delete()
+
+    messages.warning(request, '🧪 All sandbox balances reset to zero and mock transactions cleared.')
+    return JsonResponse({'ok': True, 'message': 'Balances zeroed and mock transactions cleared.'})

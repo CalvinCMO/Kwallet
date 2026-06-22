@@ -41,6 +41,27 @@ MIDDLEWARE = [
     'wallet.middleware.IdleTimeoutMiddleware',    # auto-logout after 5 min idle
 ]
 
+# ── Sandbox / Mock mode ─────────────────────────────────────────────────────
+# Set WALLET_SANDBOX_MODE=False in Railway env vars when you go live.
+# While True, all STK pushes, B2C, and bank webhooks are simulated locally —
+# no real money moves regardless of M-Pesa/Airtel environment setting.
+WALLET_SANDBOX_MODE = os.environ.get('WALLET_SANDBOX_MODE', 'True') == 'True'
+
+# How long (seconds) after a mock STK push the auto-confirm fires (simulates network delay)
+SANDBOX_CONFIRM_DELAY = int(os.environ.get('SANDBOX_CONFIRM_DELAY', '3'))
+
+# Starting balance credited to new sandbox wallets for each currency they add
+SANDBOX_STARTING_BALANCE = {
+    'KES': 10000,
+    'USD': 100,
+    'EUR': 100,
+    'GBP': 100,
+    'TZS': 250000,
+    'UGX': 400000,
+}
+
+
+
 # ── Idle timeout — 5 minutes (300 seconds) ──────────────────────────────────
 IDLE_TIMEOUT_SECONDS = 300
 
