@@ -5,19 +5,19 @@
 <div class="app-shell">
   <div class="app-scroll">
 
-    {# ── KYC Banner (Risk #15) ── #}
+    
     {% if wallet.kyc_status == 'pending' %}
     <div class="kyc-banner">
       <span class="kyc-banner-icon">⚠️</span>
       <div class="kyc-banner-text">
         <strong>Verify your identity to unlock withdrawals</strong>
-        <span>Deposits only until KYC is approved — CBK requirement</span>
+        <span>Deposits only — verify your identity to unlock full features</span>
       </div>
       <a href="{% url 'kyc_start' %}" class="kyc-banner-btn">Verify →</a>
     </div>
     {% endif %}
 
-    {# ── Stale rate banner (Risk #01) ── #}
+    
     {% if rates_stale %}
     <div class="rate-stale-banner">
       ⚠️ Live rates unavailable — using fallback rates. Exchanges above KES 5,000 are paused.
@@ -90,7 +90,7 @@
       </div>
     </div>
 
-    {# ── AML Daily Limit Bar (Risk #16) ── #}
+    
     <div style="padding:14px 20px 0">
       <div class="limit-bar-wrap">
         <div class="limit-bar-label">
@@ -114,7 +114,7 @@
         <span class="action-label">Send</span>
       </a>
 
-      {# WITHDRAW replaces Receive (Risk #15: locked when KYC pending) #}
+      
       {% if wallet.kyc_status == 'verified' %}
       <a class="action-item" href="{% url 'withdraw' %}">
         <div class="action-circle ac-withdraw">
@@ -211,7 +211,7 @@
           {% endif %}
         </div>
         <div class="tx-body">
-          {# Risk #06: PII masked in transaction labels #}
+          
           <div class="tx-name">
             {% if txn.transaction_type == 'mpesa_deposit' %}M-Pesa Deposit
             {% elif txn.transaction_type == 'mpesa_withdraw' %}M-Pesa Withdrawal

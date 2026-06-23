@@ -93,10 +93,10 @@ def wallet_required(view_fn):
 
 
 def kyc_required(view_fn):
-    """Risk #15: block view entirely if KYC is not verified."""
+    """Block view if KYC is not verified; sandbox wallets are exempt."""
     @wraps(view_fn)
     def wrapper(request, wallet, *args, **kwargs):
-        if wallet.kyc_status != 'verified':
+        if wallet.kyc_status != 'verified' and not _sandbox.is_sandbox(wallet):
             messages.warning(request, 'Identity verification required before you can perform this action.')
             return redirect('kyc_start')
         return view_fn(request, wallet, *args, **kwargs)
@@ -830,8 +830,7 @@ def mpesa_withdraw_view(request, wallet):
     if request.method != 'POST':
         return redirect('withdraw')
 
-    # Risk #15: enforce KYC
-    if wallet.kyc_status != 'verified':
+    if wallet.kyc_status != 'verified' and not _sandbox.is_sandbox(wallet):
         messages.error(request, 'Identity verification required before withdrawals.')
         return redirect('withdraw')
 
@@ -867,6 +866,16 @@ def mpesa_withdraw_view(request, wallet):
     kes_balance = wallet.get_kes_balance()
     if total > Decimal(str(kes_balance)):
         messages.error(request, f'Insufficient balance. Available: KES {kes_balance:,.2f}')
+        return redirect('withdraw')
+
+    # Sandbox: mock withdrawal, skip real B2C rail
+    if _sandbox.is_sandbox(wallet):
+        result = _sandbox.mock_b2c_withdraw(wallet, amount, currency='KES',
+                                             phone=phone, rail='mpesa')
+        if result['status'] == 'completed':
+            messages.success(request, f'🧪 Sandbox: KES {amount:,.2f} withdrawal simulated to {phone} ({result["receipt"]}).')
+        else:
+            messages.error(request, f'🧪 Sandbox error: {result["message"]}')
         return redirect('withdraw')
 
     idempotency_key = str(uuid.uuid4())
@@ -915,7 +924,7 @@ def airtel_withdraw_view(request, wallet):
     if request.method != 'POST':
         return redirect('withdraw')
 
-    if wallet.kyc_status != 'verified':
+    if wallet.kyc_status != 'verified' and not _sandbox.is_sandbox(wallet):
         messages.error(request, 'Identity verification required before withdrawals.')
         return redirect('withdraw')
 
@@ -954,6 +963,16 @@ def airtel_withdraw_view(request, wallet):
         messages.error(request, f'Insufficient balance. Available: KES {kes_balance:,.2f}')
         return redirect('withdraw')
 
+    # Sandbox: mock withdrawal, skip real Airtel rail
+    if _sandbox.is_sandbox(wallet):
+        result = _sandbox.mock_b2c_withdraw(wallet, amount, currency='KES',
+                                             phone=phone, rail='airtel')
+        if result['status'] == 'completed':
+            messages.success(request, f'🧪 Sandbox: KES {amount:,.2f} Airtel withdrawal simulated to {phone} ({result["receipt"]}).')
+        else:
+            messages.error(request, f'🧪 Sandbox error: {result["message"]}')
+        return redirect('withdraw')
+
     idempotency_key = str(uuid.uuid4())
     try:
         with db_transaction.atomic():
@@ -990,7 +1009,7 @@ def bank_withdraw_view(request, wallet):
     if request.method != 'POST':
         return redirect('withdraw')
 
-    if wallet.kyc_status != 'verified':
+    if wallet.kyc_status != 'verified' and not _sandbox.is_sandbox(wallet):
         messages.error(request, 'Identity verification required.')
         return redirect('withdraw')
 
@@ -1028,11 +1047,22 @@ def bank_withdraw_view(request, wallet):
 
     # Risk #16: enhanced verification for large bank transfers
     if amount > Decimal('100000'):
-        messages.warning(request, 'Transfers above KES 100,000 require enhanced verification. Our compliance team will contact you within 1 business day.')
+        messages.warning(request, 'Large transfers may require additional verification. Our team will contact you if needed.')
 
     kes_balance = wallet.get_kes_balance()
     if total > Decimal(str(kes_balance)):
         messages.error(request, f'Insufficient balance. Available: KES {kes_balance:,.2f}')
+        return redirect('withdraw')
+
+    # Sandbox: mock bank withdrawal
+    if _sandbox.is_sandbox(wallet):
+        result = _sandbox.mock_bank_withdraw(wallet, amount,
+                    bank_name=bank_name, account_number=account_number,
+                    account_name=account_name)
+        if result['status'] == 'completed':
+            messages.success(request, f'🧪 Sandbox: KES {amount:,.2f} bank withdrawal simulated to {bank_name} ({result["receipt"]}).')
+        else:
+            messages.error(request, f'🧪 Sandbox error: {result["message"]}')
         return redirect('withdraw')
 
     pesalink_ref = 'PL' + uuid.uuid4().hex[:12].upper()
@@ -1214,7 +1244,7 @@ def p2p_view(request, wallet):
     balances = wallet.currency_balances.all().order_by('currency')
 
     if request.method == 'POST':
-        if wallet.kyc_status != 'verified':
+        if wallet.kyc_status != 'verified' and not _sandbox.is_sandbox(wallet):
             messages.error(request, 'KYC required for transfers.')
             return redirect('p2p')
 

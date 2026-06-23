@@ -27,7 +27,7 @@
       <div class="info-chip-icon" style="background:var(--bank-lt)">🏦</div>
       <div>
         <div class="info-chip-title">Transfer funds into your wallet</div>
-        <div class="info-chip-sub">Send from any CBK-licensed bank via PesaLink or RTGS. Free. Credits within 2 hours.</div>
+        <div class="info-chip-sub">Send from any licensed bank via PesaLink or RTGS. Free. Credits within 2 hours.</div>
       </div>
     </div>
 
@@ -87,9 +87,9 @@
 
   {# ── BANK WITHDRAWAL ── #}
   <div class="method-pane" id="bpane-withdraw">
-    {% if wallet.kyc_status != 'verified' %}
+    {% if wallet.kyc_status != 'verified' and not wallet.is_sandbox %}
     <div class="msg msg-warning" style="margin-bottom:1rem">
-      🪪 <strong>KYC required</strong> for bank withdrawals.
+      🪪 <strong>Identity verification required</strong> for bank withdrawals.
       <a href="{% url 'kyc_start' %}" style="color:var(--teal-dk);font-weight:600">Verify now →</a>
     </div>
     {% endif %}
@@ -102,7 +102,7 @@
       </div>
     </div>
 
-    {% if wallet.kyc_status == 'verified' %}
+    {% if wallet.kyc_status == 'verified' or wallet.is_sandbox %}
     <form method="post" action="{% url 'bank_withdraw' %}">
       {% csrf_token %}
       <div class="fg">
@@ -131,15 +131,15 @@
       <div class="ibox">
         🔒 Funds are transferred via <strong>PesaLink / RTGS</strong>. Arrives in your bank within 4 hours on business days.
         {% if wallet.kyc_status == 'verified' %}
-        Large transfers above KES 100,000 require additional compliance review.
+        Large transfers may require additional verification.
         {% endif %}
       </div>
       <button type="submit" class="btn btn-bank btn-block"
-        {% if wallet.kyc_status != 'verified' %}disabled{% endif %}>
+        {% if wallet.kyc_status != 'verified' and not wallet.is_sandbox %}disabled{% endif %}>
         Withdraw to Bank →
       </button>
     </form>
-    {% else %}
+    {% elif not wallet.is_sandbox %}
     <div style="text-align:center;padding:2rem 0">
       <a href="{% url 'kyc_start' %}" class="btn btn-primary">Verify Identity to Withdraw →</a>
     </div>

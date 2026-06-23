@@ -28,3 +28,6 @@ myworld/
 # OS
 .DS_Store
 Thumbs.db
+
+# Developer-only notes — not for client builds
+DEV_NOTES.md

@@ -70,7 +70,7 @@
             </span>
           </td>
           <td style="font-size:.78rem;color:var(--ink-3)">
-            {# Risk #06: PII masked — no full name/phone in details #}
+            
             {% if txn.transaction_type == 'p2p_send' %}→ {{ txn.masked_recipient }}
             {% elif txn.details %}{{ txn.details|truncatechars:40 }}
             {% else %}—{% endif %}

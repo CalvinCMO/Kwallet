@@ -12,7 +12,7 @@
     <a href="{% url 'dashboard' %}" class="back-btn">← Back</a>
   </div>
 
-  {# Risk #01: stale rate block #}
+  
   {% if rates_stale %}
   <div class="msg msg-error" style="margin-bottom:1rem">
     ⚠️ <strong>Live rates unavailable.</strong> Using fallback rates — exchanges above KES 5,000 equivalent are paused to protect you from stale-rate losses.
@@ -23,7 +23,7 @@
   <div class="msgs">{% for m in messages %}<div class="msg msg-{{ m.tags }}">{{ m }}</div>{% endfor %}</div>
   {% endif %}
 
-  {# Risk #15: KYC check for exchange (bypassed in sandbox) #}
+  
   {% if wallet.kyc_status != 'verified' and not wallet.is_sandbox %}
   <div class="kyc-full-block" style="margin-bottom:1.25rem">
     <div class="kyc-full-block-icon">🔒</div>
@@ -76,7 +76,7 @@
         <div class="prev-fee"  id="prevFee"></div>
       </div>
 
-      {# Risk #01: block large exchanges on fallback rates #}
+      
       {% if rates_stale %}
       <div class="fee-box">⚠️ Exchange limit of KES 5,000 applies while on fallback rates. Live rates will restore full limits.</div>
       {% endif %}

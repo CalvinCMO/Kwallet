@@ -265,3 +265,51 @@ def mock_exchange(wallet, from_currency: str, to_currency: str, amount: Decimal)
         'message': (f'Sandbox exchange: {from_currency} {amount} → '
                     f'{to_currency} {converted} @ {rate:.6f} (fee-free).'),
     }
+
+
+# ── Mock Bank Withdraw ────────────────────────────────────────────────────────
+
+def mock_bank_withdraw(wallet, amount: Decimal, bank_name: str = '',
+                       account_number: str = '', account_name: str = '') -> dict:
+    """
+    Simulate a bank/PesaLink withdrawal.
+    Deducts KES balance immediately, no real bank rails called.
+    """
+    from .models import BankTransaction, CurrencyBalance
+    from .views import _debit_balance
+
+    receipt = mock_ref('MOCK_BANK_WD_')
+    try:
+        with db_transaction.atomic():
+            cb = CurrencyBalance.objects.select_for_update().get(
+                wallet=wallet, currency='KES'
+            )
+            if cb.balance < amount:
+                return {
+                    'sandbox': True, 'status': 'failed',
+                    'message': f'Insufficient KES balance ({cb.balance} < {amount}).',
+                }
+            _debit_balance(wallet, 'KES', amount,
+                           'bank_withdraw', external_ref=receipt, fee=Decimal('0'))
+            BankTransaction.objects.create(
+                wallet=wallet,
+                reference=receipt,
+                amount=amount,
+                bank_name=bank_name or 'Mock Bank',
+                account_number=account_number or '0000000000',
+                account_name=account_name or 'Sandbox User',
+                status='completed',
+                transaction_type='bank_withdraw',
+            )
+    except CurrencyBalance.DoesNotExist:
+        return {'sandbox': True, 'status': 'failed',
+                'message': 'No KES balance found on this wallet.'}
+
+    logger.info('[SANDBOX] Mock bank withdrawal: wallet=%s amount=%s receipt=%s',
+                wallet.wallet_id, amount, receipt)
+    return {
+        'sandbox': True, 'receipt': receipt,
+        'amount': str(amount), 'currency': 'KES',
+        'bank': bank_name, 'status': 'completed',
+        'message': f'Sandbox bank withdrawal of KES {amount} processed instantly (no real transfer).',
+    }

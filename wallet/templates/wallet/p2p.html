@@ -15,8 +15,8 @@
   <div class="msgs">{% for m in messages %}<div class="msg msg-{{ m.tags }}">{{ m }}</div>{% endfor %}</div>
   {% endif %}
 
-  {# Risk #15: KYC check #}
-  {% if wallet.kyc_status != 'verified' %}
+  
+  {% if wallet.kyc_status != 'verified' and not wallet.is_sandbox %}
   <div class="kyc-full-block" style="margin-bottom:1.25rem">
     <div class="kyc-full-block-icon">🔒</div>
     <div>
@@ -33,14 +33,14 @@
       <div class="fg">
         <label class="fl">Recipient Phone Number</label>
         <input class="fi" type="tel" name="recipient_phone" placeholder="07XX XXX XXX" required
-               {% if wallet.kyc_status != 'verified' %}disabled{% endif %}>
-        {# Risk #06: we only ask for phone, never display full name in history #}
+               {% if wallet.kyc_status != 'verified' and not wallet.is_sandbox %}disabled{% endif %}>
+        
         <div class="fh">The recipient must be a registered KWallet user</div>
         {% if form.recipient_phone.errors %}<div class="fe">{{ form.recipient_phone.errors|join:", " }}</div>{% endif %}
       </div>
       <div class="fg">
         <label class="fl">Currency</label>
-        <select class="fs" name="currency" id="p2pCurr" onchange="updateFee()" {% if wallet.kyc_status != 'verified' %}disabled{% endif %}>
+        <select class="fs" name="currency" id="p2pCurr" onchange="updateFee()" {% if wallet.kyc_status != 'verified' and not wallet.is_sandbox %}disabled{% endif %}>
           {% for cb in balances %}
           <option value="{{ cb.currency }}">{{ cb.currency }} — {{ cb.balance|floatformat:2 }} available</option>
           {% endfor %}
@@ -49,7 +49,7 @@
       <div class="fg">
         <label class="fl">Amount</label>
         <input class="fi" type="number" name="amount" id="p2pAmt" step="any" min="1"
-               placeholder="0.00" oninput="updateFee()" {% if wallet.kyc_status != 'verified' %}disabled{% endif %}>
+               placeholder="0.00" oninput="updateFee()" {% if wallet.kyc_status != 'verified' and not wallet.is_sandbox %}disabled{% endif %}>
         {% if form.amount.errors %}<div class="fe">{{ form.amount.errors|join:", " }}</div>{% endif %}
       </div>
       <div class="fee-preview" id="p2pFeeBox" style="display:none">
@@ -61,10 +61,10 @@
       <div class="fg">
         <label class="fl">Note <span class="field-hint">(optional)</span></label>
         <input class="fi" type="text" name="note" maxlength="80" placeholder="e.g. Rent contribution"
-               {% if wallet.kyc_status != 'verified' %}disabled{% endif %}>
+               {% if wallet.kyc_status != 'verified' and not wallet.is_sandbox %}disabled{% endif %}>
       </div>
 
-      {# AML limit bar (Risk #16) #}
+      
       <div class="limit-bar-wrap" style="margin-bottom:.85rem">
         <div class="limit-bar-label">
           <span>Daily limit used</span>
@@ -78,10 +78,10 @@
 
       <div class="security-notice">
         <svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-        Recipient details are masked in your transaction history. Only a phone prefix is stored (Risk #06).
+        Recipient details are kept private in your transaction history.
       </div>
 
-      <button type="submit" class="btn btn-primary btn-block" {% if wallet.kyc_status != 'verified' %}disabled{% endif %}>Send →</button>
+      <button type="submit" class="btn btn-primary btn-block" {% if wallet.kyc_status != 'verified' and not wallet.is_sandbox %}disabled{% endif %}>Send →</button>
     </form>
   </div>
 </div>

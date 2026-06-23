@@ -12,7 +12,7 @@
   <div class="msgs">{% for m in messages %}<div class="msg msg-{{ m.tags }}">{{ m }}</div>{% endfor %}</div>
   {% endif %}
 
-  {# Risk #03: show lockout message when brute-force detected #}
+  
   {% if locked_until %}
   <div class="msg msg-error" style="margin-bottom:1rem">
     🔒 Account locked due to too many failed attempts. Try again after <strong>{{ locked_until }}</strong>.

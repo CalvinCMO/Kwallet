@@ -24,14 +24,13 @@
     </div>
     {% endif %}
 
-    {# Risk #15: Hard KYC block — entire page locked if not verified #}
-    {% if wallet.kyc_status != 'verified' %}
+    {% if wallet.kyc_status != 'verified' and not wallet.is_sandbox %}
     <div style="padding:12px 16px 20px">
       <div class="kyc-full-block">
         <div class="kyc-full-block-icon">🔒</div>
         <div>
           <strong>Identity verification required</strong>
-          <p>Withdrawals are locked until your KYC is approved. This is required under the Central Bank of Kenya's National Payment System regulations.</p>
+          <p>Withdrawals are locked until your KYC is approved.</p>
           <a href="{% url 'kyc_start' %}" class="btn btn-gold btn-sm" style="margin-top:12px;display:inline-flex">Complete Verification →</a>
         </div>
       </div>
@@ -39,7 +38,7 @@
 
     {% else %}
 
-    {# AML daily limit bar (Risk #16) #}
+    
     <div style="padding:0 16px 8px">
       <div class="limit-bar-wrap">
         <div class="limit-bar-label">
@@ -54,6 +53,11 @@
     </div>
 
     {# ── Method tabs ── #}
+    {% if wallet.is_sandbox %}
+    <div class="msg msg-warning" style="margin:0 16px 8px;font-size:.82rem">
+      🧪 <strong>Sandbox mode:</strong> Withdrawals are simulated — no real money is moved and no mobile money or bank rails are called.
+    </div>
+    {% endif %}
     <div class="method-tabs-bar">
       <button class="method-tab active-mpesa" id="tab-mpesa" onclick="switchTab('mpesa',this)">📱 M-Pesa</button>
       <button class="method-tab" id="tab-airtel" onclick="switchTab('airtel',this)">📶 Airtel Money</button>
@@ -94,7 +98,7 @@
           </div>
           <div class="security-notice">
             <svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-            Callback verified against Safaricom IP allowlist + HMAC secret. Idempotency key prevents double-credit (Risk #02 & #05).
+            Your transaction is protected end-to-end.
           </div>
           <button type="submit" class="btn btn-primary btn-block">Withdraw via M-Pesa →</button>
         </form>
@@ -134,7 +138,7 @@
           </div>
           <div class="security-notice">
             <svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-            Airtel callback verified with shared-secret header + IP allowlist. Same idempotency guard as M-Pesa (Risk #02 & #05).
+            Your transaction is protected end-to-end.
           </div>
           <button type="submit" class="btn btn-airtel btn-block">Withdraw via Airtel Money →</button>
         </form>
@@ -149,7 +153,7 @@
           <div class="info-chip-icon" style="background:var(--bank-lt)">🏦</div>
           <div>
             <div class="info-chip-title">Bank Transfer — PesaLink / RTGS</div>
-            <div class="info-chip-sub">All CBK-licensed banks. Flat KES 50 fee. Same-day before 2 PM; next business day otherwise.</div>
+            <div class="info-chip-sub">All major banks. Flat KES 50 fee. Same-day before 2 PM; next business day otherwise.</div>
           </div>
         </div>
 
@@ -187,7 +191,7 @@
           </div>
           <div class="security-notice">
             <svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-            Transfers above KES 100,000 require enhanced verification per CBK Proceeds of Crime Act (Risk #16 — AML structuring detection).
+            Large transfers may require additional verification.
           </div>
           <button type="submit" class="btn btn-bank btn-block" onclick="return validateBank()">Send to Bank →</button>
         </form>
