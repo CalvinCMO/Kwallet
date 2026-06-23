@@ -130,6 +130,32 @@
     </button>
   </div>
 
+  {# ── Mock Exchange ── #}
+  <div class="card" style="margin-bottom:1rem">
+    <div class="card-title">🔄 Mock Exchange (Fee-Free)</div>
+    <div style="font-size:.78rem;color:var(--ink-3);margin-bottom:.75rem">
+      Converts between sandbox currencies instantly at the live rate. No fees applied — useful for seeding multi-currency test scenarios.
+    </div>
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:.6rem">
+      <select id="ex-from" class="fi" style="flex:1;min-width:80px">
+        {% for curr in all_currencies %}
+        <option value="{{ curr }}" {% if curr == wallet.home_currency %}selected{% endif %}>{{ curr }}</option>
+        {% endfor %}
+      </select>
+      <span style="align-self:center;color:var(--teal);font-size:1.1rem">⇅</span>
+      <select id="ex-to" class="fi" style="flex:1;min-width:80px">
+        {% for curr in all_currencies %}
+        <option value="{{ curr }}" {% if curr == 'USD' %}selected{% endif %}>{{ curr }}</option>
+        {% endfor %}
+      </select>
+      <input id="ex-amount" type="number" class="fi" placeholder="Amount" min="0.01" value="1000" style="flex:1;min-width:90px">
+    </div>
+    <button onclick="sandboxAction('{% url 'sandbox_exchange' %}', {from_currency: exFrom(), to_currency: exTo(), amount: exAmt()})"
+            class="btn btn-block" style="font-size:.82rem;background:var(--teal-dk);color:#fff;border:none;border-radius:8px;padding:.6rem;cursor:pointer">
+      Simulate Exchange →
+    </button>
+  </div>
+
   {# ── Recent mock transactions ── #}
   {% if recent %}
   <div class="card">
@@ -179,5 +205,8 @@ const wdRail  = () => document.getElementById('wd-rail').value;
 const wdCurr  = () => document.getElementById('wd-currency').value;
 const wdAmt   = () => document.getElementById('wd-amount').value;
 const bankAmt = () => document.getElementById('bank-amount').value;
+const exFrom  = () => document.getElementById('ex-from').value;
+const exTo    = () => document.getElementById('ex-to').value;
+const exAmt   = () => document.getElementById('ex-amount').value;
 </script>
 {% endblock %}

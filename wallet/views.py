@@ -1111,7 +1111,7 @@ def exchange_view(request, wallet):
     stale    = rates_are_stale()
 
     if request.method == 'POST':
-        if wallet.kyc_status != 'verified':
+        if wallet.kyc_status != 'verified' and not _sandbox.is_sandbox(wallet):
             messages.error(request, 'KYC required for currency exchange.')
             return redirect('exchange')
 
@@ -1941,3 +1941,27 @@ def sandbox_reset_view(request, wallet):
 
     messages.warning(request, '🧪 All sandbox balances reset to zero and mock transactions cleared.')
     return JsonResponse({'ok': True, 'message': 'Balances zeroed and mock transactions cleared.'})
+
+
+@wallet_required
+@require_POST
+def sandbox_exchange_view(request, wallet):
+    """Mock exchange — converts between currencies instantly at live rate, fee-free."""
+    if not _sandbox_guard(wallet):
+        return JsonResponse({'ok': False, 'error': 'Not in sandbox mode'}, status=403)
+
+    from_currency = request.POST.get('from_currency', '').strip().upper()
+    to_currency   = request.POST.get('to_currency', '').strip().upper()
+    try:
+        amount = Decimal(request.POST.get('amount', '0'))
+        if amount <= 0:
+            raise InvalidOperation
+    except InvalidOperation:
+        return JsonResponse({'ok': False, 'error': 'Invalid amount'}, status=400)
+
+    result = _sandbox.mock_exchange(wallet, from_currency, to_currency, amount)
+    if result['status'] == 'completed':
+        messages.success(request, f'🧪 {result["message"]}')
+    else:
+        messages.error(request, f'🧪 {result["message"]}')
+    return JsonResponse({'ok': result['status'] == 'completed', **result})

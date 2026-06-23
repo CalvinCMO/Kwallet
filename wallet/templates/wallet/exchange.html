@@ -23,8 +23,8 @@
   <div class="msgs">{% for m in messages %}<div class="msg msg-{{ m.tags }}">{{ m }}</div>{% endfor %}</div>
   {% endif %}
 
-  {# Risk #15: KYC check for exchange #}
-  {% if wallet.kyc_status != 'verified' %}
+  {# Risk #15: KYC check for exchange (bypassed in sandbox) #}
+  {% if wallet.kyc_status != 'verified' and not wallet.is_sandbox %}
   <div class="kyc-full-block" style="margin-bottom:1.25rem">
     <div class="kyc-full-block-icon">🔒</div>
     <div>
@@ -34,6 +34,11 @@
     </div>
   </div>
   {% endif %}
+  {% if wallet.is_sandbox and wallet.kyc_status != 'verified' %}
+  <div class="msg msg-warning" style="margin-bottom:1rem;font-size:.82rem">
+    🧪 <strong>Sandbox mode:</strong> KYC bypassed — exchanges allowed with mock balances.
+  </div>
+  {% endif %}
 
   <form method="post" id="exchangeForm">
     {% csrf_token %}
@@ -41,7 +46,7 @@
 
       <div class="fg">
         <label class="fl">From currency</label>
-        <select class="fs" name="from_currency" id="fromCurr" onchange="updatePreview()" {% if wallet.kyc_status != 'verified' %}disabled{% endif %}>
+        <select class="fs" name="from_currency" id="fromCurr" onchange="updatePreview()" {% if wallet.kyc_status != "verified" and not wallet.is_sandbox %}disabled{% endif %}>
           {% for cb in balances %}
           <option value="{{ cb.currency }}">{{ cb.currency }} ({{ cb.balance|floatformat:2 }} available)</option>
           {% endfor %}
@@ -52,7 +57,7 @@
 
       <div class="fg" style="margin-top:.6rem">
         <label class="fl">To currency</label>
-        <select class="fs" name="to_currency" id="toCurr" onchange="updatePreview()" {% if wallet.kyc_status != 'verified' %}disabled{% endif %}>
+        <select class="fs" name="to_currency" id="toCurr" onchange="updatePreview()" {% if wallet.kyc_status != "verified" and not wallet.is_sandbox %}disabled{% endif %}>
           {% for cb in balances %}
           <option value="{{ cb.currency }}">{{ cb.currency }}</option>
           {% endfor %}
@@ -62,7 +67,7 @@
       <div class="fg">
         <label class="fl">Amount</label>
         <input class="fi" type="number" name="amount" id="exAmt" step="any" min="0.01"
-               placeholder="0.00" oninput="updatePreview()" {% if wallet.kyc_status != 'verified' %}disabled{% endif %}>
+               placeholder="0.00" oninput="updatePreview()" {% if wallet.kyc_status != "verified" and not wallet.is_sandbox %}disabled{% endif %}>
       </div>
 
       <div class="prev" id="exPreview">
@@ -77,7 +82,7 @@
       {% endif %}
 
     </div>
-    <button type="submit" class="btn btn-primary btn-block" {% if wallet.kyc_status != 'verified' %}disabled{% endif %}>Exchange →</button>
+    <button type="submit" class="btn btn-primary btn-block" {% if wallet.kyc_status != "verified" and not wallet.is_sandbox %}disabled{% endif %}>Exchange →</button>
   </form>
 
   {# Live rates display #}

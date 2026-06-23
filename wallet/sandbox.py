@@ -204,3 +204,64 @@ def seed_sandbox_balance(wallet, currency: str):
                     'sandbox_seed', external_ref=receipt, fee=Decimal('0'))
     logger.info('[SANDBOX] Seeded %s %s for wallet %s',
                 currency, seed_amount, wallet.wallet_id)
+
+
+# ── Mock Exchange ─────────────────────────────────────────────────────────────
+
+def mock_exchange(wallet, from_currency: str, to_currency: str, amount: Decimal) -> dict:
+    """
+    Simulate a currency exchange using live rates (fee-free for sandbox).
+    Debits from_currency and credits to_currency immediately.
+    """
+    from .models import CurrencyBalance
+    from .views import _debit_balance, _credit_balance
+    from .rates import get_pair_rate
+
+    if from_currency == to_currency:
+        return {'sandbox': True, 'status': 'failed',
+                'message': 'From and To currencies must be different.'}
+
+    try:
+        rate = Decimal(str(get_pair_rate(from_currency, to_currency)))
+    except Exception:
+        return {'sandbox': True, 'status': 'failed',
+                'message': f'Exchange rate unavailable for {from_currency}/{to_currency}.'}
+
+    converted = (amount * rate).quantize(Decimal('0.000001'))
+    receipt = mock_ref('MOCK_EX_')
+
+    try:
+        with db_transaction.atomic():
+            from_cb = CurrencyBalance.objects.select_for_update().get(
+                wallet=wallet, currency=from_currency
+            )
+            if from_cb.balance < amount:
+                return {
+                    'sandbox': True, 'status': 'failed',
+                    'message': f'Insufficient {from_currency} balance ({from_cb.balance} < {amount}).',
+                }
+            to_cb, _ = CurrencyBalance.objects.get_or_create(
+                wallet=wallet, currency=to_currency, defaults={'balance': 0}
+            )
+            _debit_balance(wallet, from_currency, amount,
+                           'sandbox_exchange', external_ref=receipt, fee=Decimal('0'))
+            _credit_balance(wallet, to_currency, converted,
+                            'sandbox_exchange', external_ref=receipt, fee=Decimal('0'))
+    except CurrencyBalance.DoesNotExist:
+        return {'sandbox': True, 'status': 'failed',
+                'message': f'No {from_currency} balance found on this wallet.'}
+
+    logger.info('[SANDBOX] Mock exchange: wallet=%s %s %s → %s %s @ %s receipt=%s',
+                wallet.wallet_id, amount, from_currency, converted, to_currency, rate, receipt)
+    return {
+        'sandbox': True,
+        'receipt': receipt,
+        'from_currency': from_currency,
+        'to_currency': to_currency,
+        'amount': str(amount),
+        'converted': str(converted),
+        'rate': str(rate),
+        'status': 'completed',
+        'message': (f'Sandbox exchange: {from_currency} {amount} → '
+                    f'{to_currency} {converted} @ {rate:.6f} (fee-free).'),
+    }

@@ -36,6 +36,7 @@ urlpatterns = [
     path('sandbox/bank-deposit/',  views.sandbox_bank_deposit_view,name='sandbox_bank_deposit'),
     path('sandbox/seed/',          views.sandbox_seed_view,        name='sandbox_seed'),
     path('sandbox/reset/',         views.sandbox_reset_view,       name='sandbox_reset'),
+    path('sandbox/exchange/',        views.sandbox_exchange_view,    name='sandbox_exchange'),
 
     # Bank — unified deposit + withdrawal
     path('bank/',                  views.bank_view,             name='bank'),
