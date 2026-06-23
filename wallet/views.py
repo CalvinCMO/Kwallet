@@ -1830,7 +1830,6 @@ def sandbox_panel_view(request, wallet):
     ).order_by('-created_at')[:20]
 
     from .rates import get_rates
-    from .models import EA_CURRENCIES, INTL_CURRENCIES
     all_currencies = [c for c, _ in EA_CURRENCIES + INTL_CURRENCIES]
 
     return render(request, 'wallet/sandbox_panel.html', {

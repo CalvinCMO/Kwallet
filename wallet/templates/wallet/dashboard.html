@@ -37,9 +37,47 @@
           <div class="home-greeting">Good day,</div>
           <div class="home-name">{{ user.get_full_name|default:user.phone }}</div>
         </div>
-        <div class="dash-avatar">{{ user.first_name|slice:":1" }}{{ user.last_name|slice:":1" }}</div>
+        <div style="position:relative;">
+          <div class="dash-avatar" id="mobileAvatarBtn" style="cursor:pointer;" role="button" aria-haspopup="true" aria-expanded="false">{{ user.first_name|slice:":1" }}{{ user.last_name|slice:":1" }}</div>
+          <div id="mobileDropdown" style="
+            display:none; position:absolute; top:calc(100% + 8px); right:0;
+            min-width:200px; background:var(--surface); border:1px solid var(--border);
+            border-radius:var(--r-md); box-shadow:var(--shadow-md); padding:.45rem;
+            z-index:500;
+          ">
+            <div style="padding:.45rem .75rem .3rem; border-bottom:1px solid var(--border); margin-bottom:.3rem;">
+              <div style="font-size:.8rem;font-weight:700;color:var(--ink);">{{ user.first_name }} {{ user.last_name }}</div>
+              <div style="font-size:.68rem;color:var(--ink-4);">{{ user.phone }}</div>
+            </div>
+            <a href="{% url 'dashboard' %}"       style="display:flex;align-items:center;gap:.55rem;padding:.45rem .7rem;border-radius:var(--r-sm);font-size:.8rem;font-weight:500;color:var(--ink-2);text-decoration:none;" onmouseover="this.style.background='var(--teal-50)'" onmouseout="this.style.background=''"><span style="width:18px;text-align:center;">🏠</span> Dashboard</a>
+            <a href="{% url 'transactions' %}"    style="display:flex;align-items:center;gap:.55rem;padding:.45rem .7rem;border-radius:var(--r-sm);font-size:.8rem;font-weight:500;color:var(--ink-2);text-decoration:none;" onmouseover="this.style.background='var(--teal-50)'" onmouseout="this.style.background=''"><span style="width:18px;text-align:center;">📋</span> History</a>
+            <a href="{% url 'exchange' %}"        style="display:flex;align-items:center;gap:.55rem;padding:.45rem .7rem;border-radius:var(--r-sm);font-size:.8rem;font-weight:500;color:var(--ink-2);text-decoration:none;" onmouseover="this.style.background='var(--teal-50)'" onmouseout="this.style.background=''"><span style="width:18px;text-align:center;">🔄</span> Exchange</a>
+            <a href="{% url 'p2p' %}"             style="display:flex;align-items:center;gap:.55rem;padding:.45rem .7rem;border-radius:var(--r-sm);font-size:.8rem;font-weight:500;color:var(--ink-2);text-decoration:none;" onmouseover="this.style.background='var(--teal-50)'" onmouseout="this.style.background=''"><span style="width:18px;text-align:center;">↔️</span> Transfer</a>
+            <a href="{% url 'qr_payment_list' %}" style="display:flex;align-items:center;gap:.55rem;padding:.45rem .7rem;border-radius:var(--r-sm);font-size:.8rem;font-weight:500;color:var(--ink-2);text-decoration:none;" onmouseover="this.style.background='var(--teal-50)'" onmouseout="this.style.background=''"><span style="width:18px;text-align:center;">📲</span> QR Pay</a>
+            <a href="{% url 'add_currency' %}"    style="display:flex;align-items:center;gap:.55rem;padding:.45rem .7rem;border-radius:var(--r-sm);font-size:.8rem;font-weight:500;color:var(--ink-2);text-decoration:none;" onmouseover="this.style.background='var(--teal-50)'" onmouseout="this.style.background=''"><span style="width:18px;text-align:center;">💱</span> Add Currency</a>
+            <div style="height:1px;background:var(--border);margin:.3rem .4rem;"></div>
+            <a href="{% url 'sandbox_panel' %}"   style="display:flex;align-items:center;gap:.55rem;padding:.45rem .7rem;border-radius:var(--r-sm);font-size:.8rem;font-weight:500;color:var(--ink-2);text-decoration:none;" onmouseover="this.style.background='var(--teal-50)'" onmouseout="this.style.background=''"><span style="width:18px;text-align:center;">🧪</span> Test Panel</a>
+            <div style="height:1px;background:var(--border);margin:.3rem .4rem;"></div>
+            <a href="{% url 'logout' %}"           style="display:flex;align-items:center;gap:.55rem;padding:.45rem .7rem;border-radius:var(--r-sm);font-size:.8rem;font-weight:500;color:var(--red);text-decoration:none;" onmouseover="this.style.background='var(--red-lt)'" onmouseout="this.style.background=''"><span style="width:18px;text-align:center;">🚪</span> Log out</a>
+          </div>
+        </div>
       </div>
     </div>
+    <script>
+    (function(){
+      var btn = document.getElementById('mobileAvatarBtn');
+      var dd  = document.getElementById('mobileDropdown');
+      if (!btn || !dd) return;
+      btn.addEventListener('click', function(e){
+        e.stopPropagation();
+        var open = dd.style.display === 'block';
+        dd.style.display = open ? 'none' : 'block';
+        btn.setAttribute('aria-expanded', !open);
+      });
+      document.addEventListener('click', function(){ dd.style.display = 'none'; });
+      document.addEventListener('keydown', function(e){ if(e.key==='Escape') dd.style.display='none'; });
+    })();
+    </script>
 
     {# ── Portfolio Card ── #}
     <div class="portfolio-card">
