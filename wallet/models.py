@@ -255,6 +255,9 @@ class Wallet(models.Model):
     kyc_id_number   = models.CharField(max_length=60, blank=True)
     kyc_dob         = models.DateField(null=True, blank=True)
 
+    # Sandbox / testing flag — True = this wallet uses mock rails, no real money
+    is_sandbox      = models.BooleanField(default=True)
+
     def __str__(self):
         return f"Wallet({self.wallet_id}) — {self.phone}"
 

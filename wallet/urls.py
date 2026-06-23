@@ -29,6 +29,14 @@ urlpatterns = [
     # Airtel callback
     path('airtel/callback/',       views.airtel_callback,       name='airtel_callback'),
 
+    # Sandbox / Testing panel (only active when WALLET_SANDBOX_MODE=True)
+    path('sandbox/',               views.sandbox_panel_view,       name='sandbox_panel'),
+    path('sandbox/deposit/',       views.sandbox_deposit_view,     name='sandbox_deposit'),
+    path('sandbox/withdraw/',      views.sandbox_withdraw_view,    name='sandbox_withdraw'),
+    path('sandbox/bank-deposit/',  views.sandbox_bank_deposit_view,name='sandbox_bank_deposit'),
+    path('sandbox/seed/',          views.sandbox_seed_view,        name='sandbox_seed'),
+    path('sandbox/reset/',         views.sandbox_reset_view,       name='sandbox_reset'),
+
     # Bank — unified deposit + withdrawal
     path('bank/',                  views.bank_view,             name='bank'),
 

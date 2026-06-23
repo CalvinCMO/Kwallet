@@ -126,7 +126,9 @@ class SingleDeviceMiddleware:
 # ── Template context processor ───────────────────────────────────────────────
 
 def idle_timeout_context(request):
-    """Inject IDLE_TIMEOUT_SECONDS into every template context."""
+    """Inject IDLE_TIMEOUT_SECONDS and sandbox mode into every template context."""
+    from django.conf import settings as _s
     return {
-        'IDLE_TIMEOUT_SECONDS': getattr(settings, 'IDLE_TIMEOUT_SECONDS', 300),
+        'IDLE_TIMEOUT_SECONDS': getattr(_s, 'IDLE_TIMEOUT_SECONDS', 300),
+        'GLOBAL_SANDBOX_MODE':  getattr(_s, 'WALLET_SANDBOX_MODE', True),
     }

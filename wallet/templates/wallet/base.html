@@ -517,30 +517,74 @@
       .topnav-desktop { display: flex !important; }
       .bottom-nav     { max-width: 100vw; }
     }
-    .topnav-desktop { display: none; background: var(--surface); border-bottom: 1px solid var(--border); height: 52px; align-items: center; justify-content: space-between; padding: 0 1.25rem; position: sticky; top: 0; z-index: 300; box-shadow: var(--shadow-sm); }
-    .topnav-brand { display: flex; align-items: center; gap: .5rem; }
+    .topnav-desktop { display: none; background: var(--surface); border-bottom: 1px solid var(--border); height: 56px; align-items: center; justify-content: space-between; padding: 0 1.5rem; position: sticky; top: 0; z-index: 300; box-shadow: var(--shadow-sm); }
+    .topnav-brand { display: flex; align-items: center; gap: .5rem; text-decoration: none; }
     .topnav-logo  {
-      width: 30px; height: 30px;
+      width: 32px; height: 32px;
       background: linear-gradient(135deg, var(--teal), var(--teal-dk));
       border-radius: 9px;
       display: flex; align-items: center; justify-content: center;
-      font-size: .85rem; color: #fff; font-weight: 800;
+      font-size: .9rem; color: #fff; font-weight: 800;
     }
-    .topnav-name { font-size: 1.05rem; font-weight: 800; color: var(--ink); letter-spacing: -.03em; }
+    .topnav-name { font-size: 1.1rem; font-weight: 800; color: var(--ink); letter-spacing: -.03em; }
     .topnav-name span { color: var(--teal); }
-    .topnav-links { display: flex; align-items: center; gap: .15rem; flex-wrap: wrap; }
+
+    /* ── Dropdown menu ── */
+    .topnav-right { display: flex; align-items: center; gap: .75rem; }
+    .topnav-quick { display: flex; align-items: center; gap: .35rem; }
     .topnav-a {
       color: var(--ink-3); font-size: .78rem; font-weight: 500;
-      padding: .3rem .7rem; border-radius: var(--r-sm);
+      padding: .35rem .8rem; border-radius: var(--r-sm);
       transition: all .15s; white-space: nowrap;
     }
     .topnav-a:hover      { background: var(--teal-50); color: var(--teal-dk); }
     .topnav-a.nav-cta    { background: var(--teal-50); color: var(--teal-dk); font-weight: 600; }
     .topnav-a.nav-cta:hover { background: var(--teal-100); }
-    .topnav-a.nav-out    { color: var(--red); }
-    .topnav-a.nav-out:hover { background: var(--red-lt); }
     .topnav-a.nav-withdraw { background: #FCE7F3; color: #BE185D; font-weight: 600; }
     .topnav-a.nav-withdraw:hover { background: #FBCFE8; }
+
+    /* ── Avatar / trigger ── */
+    .topnav-menu-wrap { position: relative; }
+    .topnav-avatar-btn {
+      width: 36px; height: 36px; border-radius: 50%;
+      background: linear-gradient(135deg, var(--teal), var(--teal-dk));
+      color: #fff; font-weight: 800; font-size: .82rem;
+      display: flex; align-items: center; justify-content: center;
+      border: none; cursor: pointer; font-family: 'Inter', sans-serif;
+      transition: box-shadow .15s;
+    }
+    .topnav-avatar-btn:hover { box-shadow: 0 0 0 3px var(--teal-100); }
+    .topnav-avatar-btn.open  { box-shadow: 0 0 0 3px var(--teal-100); }
+
+    /* ── Dropdown panel ── */
+    .topnav-dropdown {
+      position: absolute; top: calc(100% + 8px); right: 0;
+      min-width: 210px;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--r-md); box-shadow: var(--shadow-md);
+      padding: .45rem; z-index: 400;
+      opacity: 0; transform: translateY(-6px) scale(.97);
+      pointer-events: none;
+      transition: opacity .15s, transform .15s;
+    }
+    .topnav-dropdown.open {
+      opacity: 1; transform: translateY(0) scale(1);
+      pointer-events: auto;
+    }
+    .dd-section { padding: .3rem .5rem .15rem; }
+    .dd-section-label { font-size: .58rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-4); padding: 0 .4rem .25rem; display: block; }
+    .dd-item {
+      display: flex; align-items: center; gap: .6rem;
+      padding: .5rem .75rem; border-radius: var(--r-sm);
+      font-size: .8rem; font-weight: 500; color: var(--ink-2);
+      cursor: pointer; transition: background .12s; white-space: nowrap;
+      text-decoration: none;
+    }
+    .dd-item:hover { background: var(--teal-50); color: var(--teal-dk); }
+    .dd-item.dd-danger { color: var(--red); }
+    .dd-item.dd-danger:hover { background: var(--red-lt); color: var(--red); }
+    .dd-icon { font-size: .9rem; width: 18px; text-align: center; flex-shrink: 0; }
+    .dd-divider { height: 1px; background: var(--border); margin: .3rem .4rem; }
   </style>
   {% block extra_head %}{% endblock %}
 </head>
@@ -550,20 +594,46 @@
 
 {# ── Desktop topnav ── #}
 <nav class="topnav-desktop">
-  <div class="topnav-brand">
+  <a href="{% url 'dashboard' %}" class="topnav-brand">
     <div class="topnav-logo">K</div>
     <span class="topnav-name">K<span>Wallet</span></span>
-  </div>
-  <div class="topnav-links">
-    <a href="{% url 'dashboard' %}"       class="topnav-a">Dashboard</a>
-    <a href="{% url 'mpesa_deposit' %}"   class="topnav-a nav-cta">⬆ Deposit</a>
-    <a href="{% url 'withdraw' %}"        class="topnav-a nav-withdraw">⬇ Withdraw</a>
-    <a href="{% url 'exchange' %}"        class="topnav-a">Exchange</a>
-    <a href="{% url 'p2p' %}"             class="topnav-a">Transfer</a>
-    <a href="{% url 'add_currency' %}"    class="topnav-a">+ Currency</a>
-    <a href="{% url 'transactions' %}"    class="topnav-a">History</a>
-    <a href="{% url 'qr_payment_list' %}" class="topnav-a">QR Pay</a>
-    <a href="{% url 'logout' %}"          class="topnav-a nav-out">Logout</a>
+  </a>
+  <div class="topnav-right">
+    {# Quick-action pills always visible #}
+    <div class="topnav-quick">
+      <a href="{% url 'mpesa_deposit' %}" class="topnav-a nav-cta">⬆ Deposit</a>
+      <a href="{% url 'withdraw' %}"      class="topnav-a nav-withdraw">⬇ Withdraw</a>
+    </div>
+
+    {# Avatar → dropdown #}
+    <div class="topnav-menu-wrap">
+      <button class="topnav-avatar-btn" id="topnavAvatarBtn" aria-haspopup="true" aria-expanded="false">
+        {{ user.first_name|slice:":1"|upper }}{{ user.last_name|slice:":1"|upper }}
+      </button>
+
+      <div class="topnav-dropdown" id="topnavDropdown" role="menu">
+        <div style="padding:.55rem .85rem .35rem; border-bottom:1px solid var(--border); margin-bottom:.3rem;">
+          <div style="font-size:.82rem;font-weight:700;color:var(--ink);">{{ user.first_name }} {{ user.last_name }}</div>
+          <div style="font-size:.7rem;color:var(--ink-4);">{{ user.phone }}</div>
+        </div>
+
+        <div class="dd-section">
+          <span class="dd-section-label">Navigate</span>
+          <a href="{% url 'dashboard' %}"       class="dd-item" role="menuitem"><span class="dd-icon">🏠</span> Dashboard</a>
+          <a href="{% url 'transactions' %}"    class="dd-item" role="menuitem"><span class="dd-icon">📋</span> History</a>
+          <a href="{% url 'exchange' %}"        class="dd-item" role="menuitem"><span class="dd-icon">🔄</span> Exchange</a>
+          <a href="{% url 'p2p' %}"             class="dd-item" role="menuitem"><span class="dd-icon">↔️</span> Transfer</a>
+          <a href="{% url 'qr_payment_list' %}" class="dd-item" role="menuitem"><span class="dd-icon">📲</span> QR Pay</a>
+          <a href="{% url 'add_currency' %}"    class="dd-item" role="menuitem"><span class="dd-icon">💱</span> Add Currency</a>
+        </div>
+
+        <div class="dd-divider"></div>
+
+        <div class="dd-section">
+          <a href="{% url 'logout' %}" class="dd-item dd-danger" role="menuitem"><span class="dd-icon">🚪</span> Log out</a>
+        </div>
+      </div>
+    </div>
   </div>
 </nav>
 
@@ -606,7 +676,23 @@
 <main>{% block content %}{% endblock %}</main>
 
 {% if user.is_authenticated %}
-{# ── Idle Timeout Warning Toast ─────────────────────────────────────────── #}
+{# ── Sandbox Mode Banner ────────────────────────────────────────────────── #}
+{% if GLOBAL_SANDBOX_MODE or wallet.is_sandbox %}
+<div id="sandbox-banner" style="
+  background:linear-gradient(90deg,#92400e,#b45309);
+  color:#fef3c7;font-size:.75rem;font-weight:700;
+  text-align:center;padding:.35rem 1rem;letter-spacing:.04em;
+  display:flex;align-items:center;justify-content:center;gap:.75rem;
+  position:sticky;top:0;z-index:1000;
+">
+  <span>🧪 SANDBOX MODE — No real money. All transactions are simulated.</span>
+  <a href="{% url 'sandbox_panel' %}" style="
+    background:#fef3c7;color:#92400e;border-radius:6px;
+    padding:.15rem .6rem;font-size:.72rem;font-weight:800;text-decoration:none;
+  ">Test Panel →</a>
+</div>
+{% endif %}
+{% endif %}
 <div id="idle-toast" style="
   display:none;position:fixed;bottom:80px;left:50%;transform:translateX(-50%);
   background:#1a202c;color:#fff;border-radius:12px;padding:.85rem 1.25rem;
@@ -709,6 +795,36 @@
 
   // ── Boot ──────────────────────────────────────────────────────────────────
   scheduleWarning();
+})();
+</script>
+<script>
+// ── Topnav dropdown ───────────────────────────────────────────────────────
+(function () {
+  const btn = document.getElementById('topnavAvatarBtn');
+  const dd  = document.getElementById('topnavDropdown');
+  if (!btn || !dd) return;
+
+  btn.addEventListener('click', function (e) {
+    e.stopPropagation();
+    const open = dd.classList.toggle('open');
+    btn.classList.toggle('open', open);
+    btn.setAttribute('aria-expanded', open);
+  });
+
+  document.addEventListener('click', function () {
+    dd.classList.remove('open');
+    btn.classList.remove('open');
+    btn.setAttribute('aria-expanded', 'false');
+  });
+
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') {
+      dd.classList.remove('open');
+      btn.classList.remove('open');
+      btn.setAttribute('aria-expanded', 'false');
+      btn.focus();
+    }
+  });
 })();
 </script>
 {% endif %}
