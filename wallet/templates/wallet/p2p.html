@@ -65,16 +65,50 @@
       </div>
 
       
-      <div class="limit-bar-wrap" style="margin-bottom:.85rem">
+      {# ── Tier badge ── #}
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+        <span style="font-size:0.78rem;color:var(--text-secondary);">Transfer tier</span>
+        <span style="font-size:0.75rem;font-weight:600;padding:2px 8px;border-radius:20px;
+          {% if limit_tier == 3 %}background:#d1fae5;color:#065f46;
+          {% elif limit_tier == 2 %}background:#dbeafe;color:#1e40af;
+          {% elif limit_tier == 1 %}background:#fef3c7;color:#92400e;
+          {% else %}background:#f3f4f6;color:#6b7280;{% endif %}">
+          {{ limit_tier_label }}
+        </span>
+      </div>
+
+      {# ── Per-transaction cap ── #}
+      <div style="display:flex;justify-content:space-between;font-size:0.78rem;
+                  color:var(--text-secondary);margin-bottom:8px;">
+        <span>Max per transfer</span>
+        <span style="font-weight:600;">KES {{ per_txn_limit|floatformat:0 }}</span>
+      </div>
+
+      {# ── Daily bar ── #}
+      <div class="limit-bar-wrap" style="margin-bottom:.5rem">
         <div class="limit-bar-label">
           <span>Daily limit used</span>
-          <span>{{ home_currency }} {{ daily_withdrawn|floatformat:0 }} / {{ daily_limit|floatformat:0 }}</span>
+          <span>KES {{ daily_withdrawn|floatformat:0 }} / {{ daily_limit|floatformat:0 }}</span>
         </div>
         <div class="limit-bar-track">
           <div class="limit-bar-fill {% if daily_pct >= 85 %}lb-red{% elif daily_pct >= 50 %}lb-yellow{% else %}lb-green{% endif %}"
                style="width:{{ daily_pct }}%"></div>
         </div>
       </div>
+
+      {# ── Monthly bar ── #}
+      {% with monthly_used=wallet.get_monthly_withdrawn %}
+      <div class="limit-bar-wrap" style="margin-bottom:.85rem">
+        <div class="limit-bar-label">
+          <span>Monthly limit used</span>
+          <span>KES {{ monthly_used|floatformat:0 }} / {{ monthly_limit|floatformat:0 }}</span>
+        </div>
+        <div class="limit-bar-track">
+          <div class="limit-bar-fill {% widthratio monthly_used monthly_limit 100 as m_pct %}{% if m_pct >= 85 %}lb-red{% elif m_pct >= 50 %}lb-yellow{% else %}lb-green{% endif %}"
+               style="width:{% widthratio monthly_used monthly_limit 100 %}%"></div>
+        </div>
+      </div>
+      {% endwith %}
 
       <div class="security-notice">
         <svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>

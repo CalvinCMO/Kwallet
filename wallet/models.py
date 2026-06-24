@@ -73,11 +73,37 @@ SEND_BRACKETS = [
 # Bank flat fee
 BANK_WITHDRAW_FEE = 50
 
-# AML daily withdrawal limit (Risk #16)
+# AML daily withdrawal limit (Risk #16) — kept as the global fallback / legacy reference
 DAILY_WITHDRAW_LIMIT = 70_000  # KES
 
 # Exchange rate fallback limits (Risk #01)
 STALE_RATE_MAX_EXCHANGE = 5_000  # KES equivalent
+
+# ─────────────────────────────────────────────
+# Progressive withdrawal limit tiers (Risk #15 / #16)
+#
+# Tier 0 — New unverified wallet (<30 days, no flags)
+# Tier 1 — Established unverified wallet (30+ days, no flags)
+# Tier 2 — KYC verified wallet (<90 days since verification)
+# Tier 3 — Fully verified wallet (90+ days since KYC approval, no flags)
+#
+# Each tuple: (daily_kes, monthly_kes, per_txn_kes, label)
+LIMIT_TIERS = {
+    0: dict(daily=10_000,   monthly=300_000,   per_txn=10_000,   label='New (Unverified)'),
+    1: dict(daily=30_000,   monthly=500_000,   per_txn=30_000,   label='Established (Unverified)'),
+    2: dict(daily=70_000,   monthly=1_000_000, per_txn=150_000,  label='KYC Verified'),
+    3: dict(daily=150_000,  monthly=3_000_000, per_txn=300_000,  label='Fully Verified'),
+}
+
+# Days thresholds for tier progression
+TIER1_DAYS   = 30   # days of good standing before unverified tier bump
+TIER3_DAYS   = 90   # days since KYC verification before full-verified bump
+# "Good standing" = zero unreviewed suspicious-activity flags
+
+# Tier 3 progressive daily growth (applied per day beyond TIER3_DAYS)
+TIER3_DAILY_STEP_KES      = 1_100   # ≈ $10/day at ~110 KES/USD
+TIER3_MONTHLY_MULTIPLIER  = 20      # monthly = daily × 20 (20 withdrawal-active days/month)
+TIER3_PER_TXN_MULTIPLIER  = 2       # per-txn cap = daily × 2
 
 
 def get_withdraw_fee(amount):
@@ -258,6 +284,27 @@ class Wallet(models.Model):
     # Sandbox / testing flag — True = this wallet uses mock rails, no real money
     is_sandbox      = models.BooleanField(default=True)
 
+    def save(self, *args, **kwargs):
+        """
+        Auto-stamp kyc_verified_at the first time kyc_status flips to 'verified',
+        and trigger a limit-tier sync so WalletLimit cached values stay fresh.
+        """
+        if self.pk:
+            try:
+                prev = Wallet.objects.get(pk=self.pk)
+                if prev.kyc_status != 'verified' and self.kyc_status == 'verified':
+                    if not self.kyc_verified_at:
+                        self.kyc_verified_at = timezone.now()
+            except Wallet.DoesNotExist:
+                pass
+        super().save(*args, **kwargs)
+        # Sync WalletLimit cache after any save (creates it if missing)
+        try:
+            limit, _ = WalletLimit.objects.get_or_create(wallet=self)
+            limit.sync_from_tier()
+        except Exception:
+            pass  # Never let a limit sync error break the save
+
     def __str__(self):
         return f"Wallet({self.wallet_id}) — {self.phone}"
 
@@ -276,9 +323,75 @@ class Wallet(models.Model):
         ).aggregate(total=Sum('amount'))
         return result['total'] or 0
 
+    def get_limit_tier(self) -> int:
+        """
+        Progressive limit tier for this wallet.
+
+        Tier 0 — new unverified   (<30 days OR has open AML flags)
+        Tier 1 — established      (30+ days, unverified, no open flags)
+        Tier 2 — KYC verified     (verified, <90 days since verification)
+        Tier 3 — fully verified   (verified, 90+ days, no open flags)
+        """
+        now = timezone.now()
+        has_open_flags = self.flags.filter(reviewed=False).exists()
+
+        if self.kyc_status == 'verified' and self.kyc_verified_at:
+            days_verified = (now - self.kyc_verified_at).days
+            if days_verified >= TIER3_DAYS and not has_open_flags:
+                return 3
+            return 2
+
+        # Unverified path
+        age_days = (now - self.created_at).days if self.created_at else 0
+        if age_days >= TIER1_DAYS and not has_open_flags:
+            return 1
+        return 0
+
+    def get_effective_limits(self) -> dict:
+        """
+        Return the active daily/monthly/per_txn limits (KES) for this wallet.
+
+        For Tier 3 wallets, limits grow progressively after the 90-day threshold:
+          - Daily:    +KES 1,100/day beyond day 90 (≈ $10/day at ~110 KES/USD)
+          - Monthly:  daily_limit × 20  (20 active withdrawal days per month)
+          - Per-txn:  daily_limit × 2   (a single txn can be up to 2 days' limit)
+
+        Growth is uncapped — long-standing, clean wallets earn proportionally
+        higher limits over time, matching real KYB/trust behaviour.
+        """
+        tier = self.get_limit_tier()
+        base = dict(LIMIT_TIERS[tier])  # shallow copy so we don't mutate the constant
+
+        if tier == 3 and self.kyc_verified_at:
+            days_beyond = max(0, (timezone.now() - self.kyc_verified_at).days - TIER3_DAYS)
+            if days_beyond > 0:
+                # +KES 1,100 per day beyond day 90  (~$10 at 110 KES/USD)
+                daily_bonus  = days_beyond * TIER3_DAILY_STEP_KES
+                new_daily    = base['daily'] + daily_bonus
+                new_monthly  = new_daily * TIER3_MONTHLY_MULTIPLIER
+                new_per_txn  = new_daily * TIER3_PER_TXN_MULTIPLIER
+                base['daily']   = int(new_daily)
+                base['monthly'] = int(new_monthly)
+                base['per_txn'] = int(new_per_txn)
+
+        return base
+
+    def get_monthly_withdrawn(self):
+        """Total completed withdrawals this calendar month (KES)."""
+        from django.db.models import Sum
+        now = timezone.now()
+        result = self.transactions.filter(
+            transaction_type__in=['mpesa_withdraw', 'airtel_withdraw', 'bank_withdraw', 'p2p_send'],
+            status='completed',
+            created_at__year=now.year,
+            created_at__month=now.month,
+        ).aggregate(total=Sum('amount'))
+        return result['total'] or 0
+
     def get_daily_pct(self):
-        used = self.get_daily_withdrawn()
-        return min(int((used / DAILY_WITHDRAW_LIMIT) * 100), 100)
+        used   = self.get_daily_withdrawn()
+        limits = self.get_effective_limits()
+        return min(int((float(used) / limits['daily']) * 100), 100)
 
 
 class CurrencyBalance(models.Model):
@@ -455,14 +568,44 @@ class SuspiciousActivityFlag(models.Model):
 
 
 class WalletLimit(models.Model):
-    """Per-wallet transaction limits, tightened for unverified users (Risk #15)."""
+    """
+    Per-wallet transaction limits (Risk #15).
+
+    Limits are now computed dynamically via Wallet.get_effective_limits() based on
+    the wallet's progressive tier.  This model stores the CURRENT cached/snapshotted
+    values (updated by a periodic task or on-write) and an optional admin override.
+
+    Admin override: set tier_override to 0-3 to pin a wallet to a specific tier
+    regardless of its automatic eligibility.  Leave as None for automatic.
+    """
+    TIER_CHOICES = [
+        (0, 'Tier 0 — New Unverified'),
+        (1, 'Tier 1 — Established Unverified'),
+        (2, 'Tier 2 — KYC Verified'),
+        (3, 'Tier 3 — Fully Verified'),
+    ]
+
     wallet             = models.OneToOneField(Wallet, on_delete=models.CASCADE, related_name='limit')
-    daily_withdraw_kes = models.DecimalField(max_digits=12, decimal_places=2, default=70000)
-    per_txn_max_kes    = models.DecimalField(max_digits=12, decimal_places=2, default=150000)
-    monthly_limit_kes  = models.DecimalField(max_digits=12, decimal_places=2, default=1_000_000)
+    daily_withdraw_kes = models.DecimalField(max_digits=12, decimal_places=2, default=10000)
+    per_txn_max_kes    = models.DecimalField(max_digits=12, decimal_places=2, default=10000)
+    monthly_limit_kes  = models.DecimalField(max_digits=12, decimal_places=2, default=300_000)
+    # Optional admin pin — overrides automatic tier calculation
+    tier_override      = models.SmallIntegerField(null=True, blank=True, choices=TIER_CHOICES)
+    last_tier_update   = models.DateTimeField(null=True, blank=True)
+
+    def sync_from_tier(self):
+        """Recompute and save limits from the wallet's current effective tier."""
+        tier = self.tier_override if self.tier_override is not None else self.wallet.get_limit_tier()
+        t = LIMIT_TIERS[tier]
+        self.daily_withdraw_kes = t['daily']
+        self.per_txn_max_kes    = t['per_txn']
+        self.monthly_limit_kes  = t['monthly']
+        self.last_tier_update   = timezone.now()
+        self.save(update_fields=['daily_withdraw_kes', 'per_txn_max_kes',
+                                  'monthly_limit_kes', 'last_tier_update'])
 
     def __str__(self):
-        return f"Limit for {self.wallet.wallet_id}"
+        return f"Limit(tier={self.tier_override or 'auto'}) for {self.wallet.wallet_id}"
 
 
 class PinResetToken(models.Model):

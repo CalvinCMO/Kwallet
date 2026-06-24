@@ -29,6 +29,7 @@ from .models import (
     Transaction, Wallet, WalletLimit, WalletUser, PinResetToken,
     DAILY_WITHDRAW_LIMIT, MAX_CURRENCIES, STALE_RATE_MAX_EXCHANGE,
     BANK_WITHDRAW_FEE, get_withdraw_fee, get_send_fee, mask_phone, mask_name,
+    LIMIT_TIERS,
 )
 from .mpesa import MpesaClient
 from .rates import get_rates, get_pair_rate, rates_are_stale
@@ -139,6 +140,8 @@ def _dashboard_context(wallet):
     recent_txns = wallet.transactions.all()[:8]
     home_currency = wallet.home_currency or (balances.first().currency if balances.exists() else 'KES')
     total_value = sum(float(cb.balance) for cb in balances if cb.currency == home_currency)
+    limits = wallet.get_effective_limits()
+    tier   = wallet.get_limit_tier()
     return {
         'wallet': wallet,
         'balances': balances,
@@ -147,8 +150,12 @@ def _dashboard_context(wallet):
         'total_value': total_value,
         'rates_stale': rates_are_stale(),
         'daily_withdrawn': daily_withdrawn,
-        'daily_limit': DAILY_WITHDRAW_LIMIT,
+        'daily_limit': limits['daily'],
+        'monthly_limit': limits['monthly'],
+        'per_txn_limit': limits['per_txn'],
         'daily_pct': daily_pct,
+        'limit_tier': tier,
+        'limit_tier_label': LIMIT_TIERS[tier]['label'],
     }
 
 
@@ -809,6 +816,8 @@ def withdraw_view(request, wallet):
     daily_withdrawn = float(wallet.get_daily_withdrawn())
     daily_pct       = wallet.get_daily_pct()
     kes_balance     = wallet.get_kes_balance()
+    limits          = wallet.get_effective_limits()
+    tier            = wallet.get_limit_tier()
     return render(request, 'wallet/withdraw.html', {
         'wallet':          wallet,
         'bank_choices':    BANK_CHOICES,
@@ -816,8 +825,12 @@ def withdraw_view(request, wallet):
         'home_currency':   wallet.home_currency or 'KES',
         'rates_stale':     rates_are_stale(),
         'daily_withdrawn': daily_withdrawn,
-        'daily_limit':     DAILY_WITHDRAW_LIMIT,
+        'daily_limit':     limits['daily'],
+        'monthly_limit':   limits['monthly'],
+        'per_txn_limit':   limits['per_txn'],
         'daily_pct':       daily_pct,
+        'limit_tier':      tier,
+        'limit_tier_label': LIMIT_TIERS[tier]['label'],
     })
 
 
@@ -853,10 +866,24 @@ def mpesa_withdraw_view(request, wallet):
     fee   = Decimal(str(get_withdraw_fee(float(amount))))
     total = amount + fee
 
-    # Risk #16: AML daily limit check
-    daily_used = wallet.get_daily_withdrawn()
-    if daily_used + float(total) > DAILY_WITHDRAW_LIMIT:
-        messages.error(request, f'This would exceed your daily withdrawal limit of KES {DAILY_WITHDRAW_LIMIT:,}.')
+    # Risk #16: AML daily limit check (progressive tier)
+    daily_used  = wallet.get_daily_withdrawn()
+    eff_limits  = wallet.get_effective_limits()
+    daily_limit = eff_limits['daily']
+    per_txn_max = eff_limits['per_txn']
+
+    if float(amount) > per_txn_max:
+        messages.error(request, f'Single transaction limit is KES {per_txn_max:,.0f} for your current tier.')
+        return redirect('withdraw')
+
+    if daily_used + float(total) > daily_limit:
+        messages.error(request, f'This would exceed your daily withdrawal limit of KES {daily_limit:,.0f}.')
+        return redirect('withdraw')
+
+    monthly_used  = wallet.get_monthly_withdrawn()
+    monthly_limit = eff_limits['monthly']
+    if monthly_used + float(total) > monthly_limit:
+        messages.error(request, f'This would exceed your monthly withdrawal limit of KES {monthly_limit:,.0f}.')
         return redirect('withdraw')
 
     # Risk #16: AML velocity checks
@@ -951,9 +978,23 @@ def airtel_withdraw_view(request, wallet):
     fee   = Decimal(str(get_withdraw_fee(float(amount))))
     total = amount + fee
 
+    eff_limits  = wallet.get_effective_limits()
+    daily_limit = eff_limits['daily']
+    per_txn_max = eff_limits['per_txn']
+
+    if float(amount) > per_txn_max:
+        messages.error(request, f'Single transaction limit is KES {per_txn_max:,.0f} for your current tier.')
+        return redirect('withdraw')
+
     daily_used = wallet.get_daily_withdrawn()
-    if daily_used + float(total) > DAILY_WITHDRAW_LIMIT:
-        messages.error(request, f'Exceeds daily limit of KES {DAILY_WITHDRAW_LIMIT:,}.')
+    if daily_used + float(total) > daily_limit:
+        messages.error(request, f'Exceeds daily limit of KES {daily_limit:,.0f}.')
+        return redirect('withdraw')
+
+    monthly_used  = wallet.get_monthly_withdrawn()
+    monthly_limit = eff_limits['monthly']
+    if monthly_used + float(total) > monthly_limit:
+        messages.error(request, f'Exceeds monthly limit of KES {monthly_limit:,.0f}.')
         return redirect('withdraw')
 
     _check_aml_velocity(wallet, amount)
@@ -1038,9 +1079,23 @@ def bank_withdraw_view(request, wallet):
     fee   = Decimal(str(BANK_WITHDRAW_FEE))
     total = amount + fee
 
+    eff_limits  = wallet.get_effective_limits()
+    daily_limit = eff_limits['daily']
+    per_txn_max = eff_limits['per_txn']
+
+    if float(amount) > per_txn_max:
+        messages.error(request, f'Single transaction limit is KES {per_txn_max:,.0f} for your current tier.')
+        return redirect('withdraw')
+
     daily_used = wallet.get_daily_withdrawn()
-    if daily_used + float(total) > DAILY_WITHDRAW_LIMIT:
-        messages.error(request, f'Exceeds daily limit of KES {DAILY_WITHDRAW_LIMIT:,}.')
+    if daily_used + float(total) > daily_limit:
+        messages.error(request, f'Exceeds daily limit of KES {daily_limit:,.0f}.')
+        return redirect('withdraw')
+
+    monthly_used  = wallet.get_monthly_withdrawn()
+    monthly_limit = eff_limits['monthly']
+    if monthly_used + float(total) > monthly_limit:
+        messages.error(request, f'Exceeds monthly limit of KES {monthly_limit:,.0f}.')
         return redirect('withdraw')
 
     _check_aml_velocity(wallet, amount)
@@ -1280,6 +1335,27 @@ def p2p_view(request, wallet):
         fee = Decimal(str(get_send_fee(float(amount)))) if currency == 'KES' else Decimal('0')
         total = amount + fee
 
+        # Risk #16: progressive limit enforcement for p2p sends
+        if currency == 'KES':
+            eff_limits    = wallet.get_effective_limits()
+            daily_limit   = eff_limits['daily']
+            per_txn_max   = eff_limits['per_txn']
+            monthly_limit = eff_limits['monthly']
+
+            if float(amount) > per_txn_max:
+                messages.error(request, f'Single transfer limit is KES {per_txn_max:,.0f} for your current tier.')
+                return redirect('p2p')
+
+            daily_used = wallet.get_daily_withdrawn()
+            if daily_used + float(total) > daily_limit:
+                messages.error(request, f'Exceeds daily limit of KES {daily_limit:,.0f}.')
+                return redirect('p2p')
+
+            monthly_used = wallet.get_monthly_withdrawn()
+            if monthly_used + float(total) > monthly_limit:
+                messages.error(request, f'Exceeds monthly limit of KES {monthly_limit:,.0f}.')
+                return redirect('p2p')
+
         _check_aml_velocity(wallet, amount if currency == 'KES' else Decimal('0'))
 
         try:
@@ -1332,13 +1408,19 @@ def p2p_view(request, wallet):
         messages.success(request, f'Sent {currency} {amount:,.2f} to {masked}.')
         return redirect('dashboard')
 
+    limits = wallet.get_effective_limits()
+    tier   = wallet.get_limit_tier()
     return render(request, 'wallet/p2p.html', {
         'wallet': wallet,
         'balances': balances,
         'home_currency': wallet.home_currency or 'KES',
         'daily_withdrawn': float(wallet.get_daily_withdrawn()),
-        'daily_limit': DAILY_WITHDRAW_LIMIT,
+        'daily_limit': limits['daily'],
+        'monthly_limit': limits['monthly'],
+        'per_txn_limit': limits['per_txn'],
         'daily_pct': wallet.get_daily_pct(),
+        'limit_tier': tier,
+        'limit_tier_label': LIMIT_TIERS[tier]['label'],
     })
 
 

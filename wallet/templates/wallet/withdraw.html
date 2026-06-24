@@ -40,16 +40,65 @@
 
     
     <div style="padding:0 16px 8px">
+
+      {# ── Tier badge ── #}
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+        <span style="font-size:0.78rem;color:var(--text-secondary);">Withdrawal tier</span>
+        <span style="font-size:0.75rem;font-weight:600;padding:2px 8px;border-radius:20px;
+          {% if limit_tier == 3 %}background:#d1fae5;color:#065f46;
+          {% elif limit_tier == 2 %}background:#dbeafe;color:#1e40af;
+          {% elif limit_tier == 1 %}background:#fef3c7;color:#92400e;
+          {% else %}background:#f3f4f6;color:#6b7280;{% endif %}">
+          {{ limit_tier_label }}
+        </span>
+      </div>
+
+      {# ── Per-transaction cap ── #}
+      <div style="display:flex;justify-content:space-between;font-size:0.78rem;
+                  color:var(--text-secondary);margin-bottom:10px;">
+        <span>Max per transaction</span>
+        <span style="font-weight:600;">KES {{ per_txn_limit|floatformat:0 }}</span>
+      </div>
+
+      {# ── Daily bar ── #}
       <div class="limit-bar-wrap">
         <div class="limit-bar-label">
-          <span>Daily withdrawal limit</span>
-          <span>{{ home_currency }} {{ daily_withdrawn|floatformat:0 }} / {{ daily_limit|floatformat:0 }}</span>
+          <span>Daily used</span>
+          <span>KES {{ daily_withdrawn|floatformat:0 }} / {{ daily_limit|floatformat:0 }}</span>
         </div>
         <div class="limit-bar-track">
           <div class="limit-bar-fill {% if daily_pct >= 85 %}lb-red{% elif daily_pct >= 50 %}lb-yellow{% else %}lb-green{% endif %}"
                style="width:{{ daily_pct }}%"></div>
         </div>
       </div>
+
+      {# ── Monthly bar ── #}
+      {% with monthly_used=wallet.get_monthly_withdrawn %}
+      <div class="limit-bar-wrap" style="margin-top:6px;">
+        <div class="limit-bar-label">
+          <span>Monthly used</span>
+          <span>KES {{ monthly_used|floatformat:0 }} / {{ monthly_limit|floatformat:0 }}</span>
+        </div>
+        <div class="limit-bar-track">
+          <div class="limit-bar-fill {% widthratio monthly_used monthly_limit 100 as m_pct %}{% if m_pct >= 85 %}lb-red{% elif m_pct >= 50 %}lb-yellow{% else %}lb-green{% endif %}"
+               style="width:{% widthratio monthly_used monthly_limit 100 %}%"></div>
+        </div>
+      </div>
+      {% endwith %}
+
+      {# ── Upgrade hint ── #}
+      {% if limit_tier < 3 %}
+      <p style="font-size:0.73rem;color:var(--text-secondary);margin:6px 0 0;">
+        {% if limit_tier == 0 %}Stay active for 30 days with no flags to unlock Tier 1 limits.
+        {% elif limit_tier == 1 %}Complete KYC verification to unlock higher limits.
+        {% elif limit_tier == 2 %}Limits increase automatically once your KYC has been verified for 90 days.{% endif %}
+      </p>
+      {% else %}
+      <p style="font-size:0.73rem;color:#065f46;margin:6px 0 0;">
+        ✓ Your limits grow by KES 1,100/day as your account matures.
+      </p>
+      {% endif %}
+
     </div>
 
     {# ── Method tabs ── #}
