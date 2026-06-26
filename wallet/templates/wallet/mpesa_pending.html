@@ -54,7 +54,7 @@
         <div style="width:72px;height:72px;background:var(--red-lt);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:2rem;margin:0 auto 16px;border:3px solid #fecaca">❌</div>
         <div style="font-size:20px;font-weight:800;color:#991b1b;margin-bottom:6px">Payment Failed</div>
         <p style="color:var(--ink-3);font-size:.88rem;margin-bottom:20px" id="failReason">The payment was not completed.</p>
-        <a href="{% url 'mpesa_deposit' %}" class="btn btn-primary" style="border-radius:var(--r-md)">Try Again</a>
+        <a href="{% url 'deposit' %}" class="btn btn-primary" style="border-radius:var(--r-md)">Try Again</a>
       </div>
 
       <a href="{% url 'dashboard' %}" class="btn btn-ghost btn-sm" style="margin-top:16px;border-radius:var(--r-full)">← Dashboard</a>
@@ -65,7 +65,7 @@
 <script>
 {% if "MOCK" not in mpesa_txn.checkout_request_id %}
 const statusUrl="{% url 'mpesa_status' checkout_id=mpesa_txn.checkout_request_id %}";
-const queryUrl="{% url 'stk_query' checkout_id=mpesa_txn.checkout_request_id %}";
+const queryUrl="{% url 'deposit' %}";
 let attempts=0,usedQuery=false;
 function showSuccess(r){document.getElementById('pendingView').style.display='none';document.getElementById('successView').style.display='block';if(r)document.getElementById('receiptDisplay').textContent='Receipt: '+r;}
 function showFailed(msg){document.getElementById('pendingView').style.display='none';document.getElementById('failedView').style.display='block';if(msg)document.getElementById('failReason').textContent=msg;}

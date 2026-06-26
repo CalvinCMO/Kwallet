@@ -61,7 +61,7 @@
     <div class="card">
       <div class="card-title" style="font-size:.78rem;margin-bottom:.75rem">📨 Notify KWallet of your transfer</div>
       <p style="font-size:.78rem;color:var(--ink-3);margin-bottom:.85rem">After sending, submit your receipt details so we can credit you faster.</p>
-      <form method="post" action="{% url 'bank_deposit_notify' %}">
+      <form method="post" action="{% url 'deposit' %}">
         {% csrf_token %}
         <div class="fg">
           <label class="fl">Amount Sent (KES) <span style="color:red">*</span></label>
@@ -103,7 +103,7 @@
     </div>
 
     {% if wallet.kyc_status == 'verified' or wallet.is_sandbox %}
-    <form method="post" action="{% url 'bank_withdraw' %}">
+    <form method="post" action="{% url 'flw_payout' %}">
       {% csrf_token %}
       <div class="fg">
         <label class="fl">Bank Name <span style="color:red">*</span></label>

@@ -168,6 +168,30 @@ AIRTEL_CONFIG = {
     'ALLOWED_CALLBACK_IPS':  os.environ.get('AIRTEL_CALLBACK_IPS', '').split(','),
 }
 
+# ── Flutterwave config ──
+# Keys from https://dashboard.flutterwave.com → Settings → API Keys
+# Webhook: set https://<your-domain>/flw/webhook/ in FLW dashboard → Webhooks
+# Redirect: set https://<your-domain>/deposit/card/return/ in FLW Inline config
+FLUTTERWAVE_CONFIG = {
+    'SECRET_KEY':       os.environ.get('FLW_SECRET_KEY', ''),       # sk_test_... / sk_live_...
+    'PUBLIC_KEY':       os.environ.get('FLW_PUBLIC_KEY', ''),       # FLWPUBK_TEST-... / FLWPUBK-...
+    'ENCRYPTION_KEY':   os.environ.get('FLW_ENCRYPTION_KEY', ''),   # 12-char key from dashboard
+    # Risk #05: must match "Secret Hash" set in FLW dashboard → Webhooks
+    'WEBHOOK_SECRET':   os.environ.get('FLW_WEBHOOK_SECRET', ''),
+    # URL Flutterwave redirects to after hosted payment (card / bank transfer)
+    'REDIRECT_URL':     os.environ.get('FLW_REDIRECT_URL', 'https://yourdomain.com/deposit/card/return/'),
+    # URL Flutterwave posts transfer (payout) status updates to
+    'TRANSFER_CALLBACK_URL': os.environ.get('FLW_TRANSFER_CALLBACK_URL', 'https://yourdomain.com/flw/webhook/'),
+    # Optional: branding on hosted checkout
+    'LOGO_URL':         os.environ.get('FLW_LOGO_URL', ''),
+    # Risk #07: set DEV_DISABLE_SSL=True in .env only for local dev without SSL
+    'DEV_DISABLE_SSL':  os.environ.get('FLW_DEV_DISABLE_SSL', 'false').lower() == 'true',
+    # Set USE_MOCK=True to skip live API calls (sandbox wallets always mock regardless)
+    'USE_MOCK':         os.environ.get('FLW_USE_MOCK', 'true').lower() == 'true',
+    # Risk #05: Flutterwave webhook IP prefixes — verify from FLW docs periodically
+    'ALLOWED_WEBHOOK_IPS': [ip for ip in os.environ.get('FLW_WEBHOOK_IPS', '').split(',') if ip],
+}
+
 # ── Email (Risk #01 #12: ops alerts) ──
 EMAIL_BACKEND = os.environ.get(
     'EMAIL_BACKEND',

@@ -17,15 +17,14 @@
   <form method="get" class="filter-bar" style="margin-bottom:1rem">
     <select class="fsel" name="type" onchange="this.form.submit()">
       <option value="">All types</option>
-      <option value="mpesa_deposit"  {% if request.GET.type == 'mpesa_deposit'  %}selected{% endif %}>M-Pesa Deposit</option>
-      <option value="mpesa_withdraw" {% if request.GET.type == 'mpesa_withdraw' %}selected{% endif %}>M-Pesa Withdrawal</option>
-      <option value="airtel_deposit" {% if request.GET.type == 'airtel_deposit' %}selected{% endif %}>Airtel Deposit</option>
-      <option value="airtel_withdraw"{% if request.GET.type == 'airtel_withdraw'%}selected{% endif %}>Airtel Withdrawal</option>
-      <option value="bank_deposit"   {% if request.GET.type == 'bank_deposit'   %}selected{% endif %}>Bank Deposit</option>
-      <option value="bank_withdraw"  {% if request.GET.type == 'bank_withdraw'  %}selected{% endif %}>Bank Withdrawal</option>
-      <option value="exchange"       {% if request.GET.type == 'exchange'       %}selected{% endif %}>Exchange</option>
-      <option value="p2p_send"       {% if request.GET.type == 'p2p_send'       %}selected{% endif %}>Transfer Sent</option>
-      <option value="p2p_receive"    {% if request.GET.type == 'p2p_receive'    %}selected{% endif %}>Transfer Received</option>
+      <option value="flw_card_deposit"   {% if request.GET.type == 'flw_card_deposit'   %}selected{% endif %}>Card Deposit</option>
+      <option value="flw_mobile_deposit" {% if request.GET.type == 'flw_mobile_deposit' %}selected{% endif %}>Mobile Deposit</option>
+      <option value="flw_bank_deposit"   {% if request.GET.type == 'flw_bank_deposit'   %}selected{% endif %}>Bank Deposit</option>
+      <option value="flw_bank_payout"    {% if request.GET.type == 'flw_bank_payout'    %}selected{% endif %}>Bank Payout</option>
+      <option value="flw_mobile_payout"  {% if request.GET.type == 'flw_mobile_payout'  %}selected{% endif %}>Mobile Payout</option>
+      <option value="exchange"           {% if request.GET.type == 'exchange'            %}selected{% endif %}>Exchange</option>
+      <option value="p2p_send"           {% if request.GET.type == 'p2p_send'            %}selected{% endif %}>Transfer Sent</option>
+      <option value="p2p_receive"        {% if request.GET.type == 'p2p_receive'         %}selected{% endif %}>Transfer Received</option>
     </select>
     <select class="fsel" name="status" onchange="this.form.submit()">
       <option value="">All status</option>

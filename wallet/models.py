@@ -19,6 +19,11 @@ TRANSACTION_TYPES = [
     ('airtel_withdraw', 'Airtel Money Withdrawal'),
     ('bank_deposit',    'Bank Deposit'),
     ('bank_withdraw',   'Bank Withdrawal'),
+    ('flw_card_deposit',   'Card Deposit (Flutterwave)'),
+    ('flw_mobile_deposit', 'Mobile Money Deposit (Flutterwave)'),
+    ('flw_bank_deposit',   'Bank Transfer Deposit (Flutterwave)'),
+    ('flw_bank_payout',    'Bank Payout (Flutterwave)'),
+    ('flw_mobile_payout',  'Mobile Money Payout (Flutterwave)'),
     ('exchange',        'Currency Exchange'),
     ('p2p_send',        'Transfer Sent'),
     ('p2p_receive',     'Transfer Received'),
@@ -500,6 +505,46 @@ class BankTransaction(models.Model):
     created_at       = models.DateTimeField(auto_now_add=True)
     updated_at       = models.DateTimeField(auto_now=True)
     timeout_at       = models.DateTimeField(null=True, blank=True)  # Risk #04
+
+
+class FlutterwaveTransaction(models.Model):
+    """
+    Tracks every payment initiated via Flutterwave (deposits and payouts).
+
+    Fields:
+      flw_tx_id   — Flutterwave's own transaction/transfer ID (set after verification)
+      tx_ref      — our idempotency key (Risk #02), generated before the API call
+      channel     — card | banktransfer | mpesa | airtel | bank_payout | mobile_payout
+      amount      — amount in `currency` (before fees)
+      fee         — Flutterwave fee charged (populated from webhook)
+      currency    — ISO 4217 code
+      phone       — for mobile-money channels
+      status      — pending | successful | failed | refunded
+      direction   — 'in' (deposit) or 'out' (payout)
+      raw_payload — last raw webhook / verify response (for audit trail)
+    """
+    DIRECTION_CHOICES = [('in', 'Deposit'), ('out', 'Payout')]
+
+    wallet       = models.ForeignKey('Wallet', on_delete=models.PROTECT, related_name='flw_transactions')
+    flw_tx_id    = models.CharField(max_length=120, blank=True, db_index=True)
+    tx_ref       = models.CharField(max_length=120, unique=True, db_index=True)
+    channel      = models.CharField(max_length=30)   # card / banktransfer / mpesa / airtel / bank_payout / mobile_payout
+    amount       = models.DecimalField(max_digits=14, decimal_places=2)
+    fee          = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    currency     = models.CharField(max_length=3, default='KES')
+    phone        = models.CharField(max_length=20, blank=True)
+    direction    = models.CharField(max_length=3, choices=DIRECTION_CHOICES, default='in')
+    status       = models.CharField(max_length=12, choices=TRANSACTION_STATUSES, default='pending')
+    raw_payload  = models.JSONField(null=True, blank=True)
+    created_at   = models.DateTimeField(auto_now_add=True)
+    updated_at   = models.DateTimeField(auto_now=True)
+    timeout_at   = models.DateTimeField(null=True, blank=True)  # Risk #04: stale pending cleanup
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'FLW {self.direction} {self.currency} {self.amount} [{self.status}] ref={self.tx_ref}'
 
 
 # ─────────────────────────────────────────────

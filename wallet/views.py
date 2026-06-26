@@ -16,22 +16,22 @@ from django.contrib.auth.decorators import login_required
 from django.core.cache import cache
 from django.core.paginator import Paginator
 from django.db import transaction as db_transaction
-from django.http import JsonResponse
+from django.http import HttpResponseBadRequest, HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
-from .airtel import AirtelClient
+from .flutterwave import FlutterwaveClient, CHANNEL_CARD, CHANNEL_BANK_TRANSFER, CHANNEL_MPESA, CHANNEL_AIRTEL
 from .models import (
-    AirtelTransaction, BankTransaction, CompanyAccount, CurrencyBalance,
-    MpesaTransaction, PoolLedger, QRPaymentRequest, SuspiciousActivityFlag,
+    BankTransaction, CompanyAccount, CurrencyBalance,
+    FlutterwaveTransaction,
+    PoolLedger, QRPaymentRequest, SuspiciousActivityFlag,
     Transaction, Wallet, WalletLimit, WalletUser, PinResetToken,
-    DAILY_WITHDRAW_LIMIT, MAX_CURRENCIES, STALE_RATE_MAX_EXCHANGE,
-    BANK_WITHDRAW_FEE, get_withdraw_fee, get_send_fee, mask_phone, mask_name,
+    MAX_CURRENCIES, STALE_RATE_MAX_EXCHANGE,
+    get_send_fee, mask_phone, mask_name,
     LIMIT_TIERS,
 )
-from .mpesa import MpesaClient
 from .rates import get_rates, get_pair_rate, rates_are_stale
 from . import sandbox as _sandbox
 from django.conf import settings as _settings
@@ -43,21 +43,6 @@ logger = logging.getLogger(__name__)
 # ─────────────────────────────────────────────
 # Helpers / Decorators
 # ─────────────────────────────────────────────
-
-BANK_CHOICES = [
-    ('KCB',     'KCB Kenya'),
-    ('Equity',  'Equity Bank'),
-    ('Coop',    'Co-operative Bank'),
-    ('NCBA',    'NCBA Bank'),
-    ('Stanbic', 'Stanbic Bank'),
-    ('Absa',    'Absa Kenya'),
-    ('IM',      'I&M Bank'),
-    ('DTB',     'Diamond Trust Bank'),
-    ('Family',  'Family Bank'),
-    ('HFC',     'HF Group'),
-    ('Gulf',    'Gulf African Bank'),
-    ('Other',   'Other (PesaLink)'),
-]
 
 EA_CURRENCIES = [
     ('KES', 'Kenyan Shilling'), ('TZS', 'Tanzanian Shilling'),
@@ -371,440 +356,442 @@ def dashboard_view(request, wallet):
     return render(request, 'wallet/dashboard.html', ctx)
 
 
+
 # ─────────────────────────────────────────────
-# Deposit — M-Pesa STK Push
+# Flutterwave — Card / Bank Transfer / Mobile deposit
 # ─────────────────────────────────────────────
 
 @wallet_required
-def mpesa_deposit_view(request, wallet):
-    mock_mode = getattr(__import__('django.conf', fromlist=['settings']).settings, 'MPESA_CONFIG', {}).get('USE_MOCK', False)
-
+def flw_deposit_view(request, wallet):
+    """
+    Initiate a Flutterwave payment (card, bank transfer, or mobile money).
+    POST creates a hosted payment link and redirects the user to Flutterwave.
+    GET renders the deposit form with channel selection.
+    """
     if request.method == 'POST':
-        deposit_method = request.POST.get('deposit_method', 'mpesa')
-
-        # Risk #08: rate limit deposits
-        allowed, _ = _check_rate_limit('deposit', str(wallet.wallet_id), 10, 3600)
+        # Risk #08: rate limit
+        allowed, _ = _check_rate_limit('flw_deposit', str(wallet.wallet_id), 10, 3600)
         if not allowed:
             messages.error(request, 'Too many deposit requests. Please wait before trying again.')
-            return redirect('mpesa_deposit')
+            return redirect('flw_deposit')
 
-        phone  = request.POST.get('phone', wallet.phone).strip() or wallet.phone
         amount_str = request.POST.get('amount', '').strip()
+        currency   = request.POST.get('currency', 'KES').strip().upper()
+        channel    = request.POST.get('channel', CHANNEL_CARD).strip()
+
         try:
             amount = Decimal(amount_str)
             if amount <= 0:
                 raise InvalidOperation
         except (InvalidOperation, TypeError):
             messages.error(request, 'Invalid amount.')
-            return redirect('mpesa_deposit')
+            return redirect('flw_deposit')
 
-        if deposit_method == 'airtel':
-            # ── Airtel STK / collection push ──
-            if _sandbox.is_sandbox(wallet):
-                result = _sandbox.mock_stk_push(wallet, amount, currency='KES', rail='airtel',
-                                                 phone=phone)
-                messages.success(request, f'🧪 [Sandbox] {result["message"]}')
-                return redirect('mpesa_deposit')
+        # Risk #02: idempotency key
+        tx_ref = f'kwallet_{wallet.wallet_id}_{uuid.uuid4().hex[:12]}'
 
-            airtel_client = AirtelClient()
-            if not airtel_client.validate_ke_number(phone):
-                messages.error(request, 'Please enter a valid Airtel Kenya number (073x, 075x, 078x).')
-                return redirect('mpesa_deposit')
-            idempotency_key = str(uuid.uuid4())
-            try:
-                response = airtel_client.collection_request(
-                    phone=phone, amount=float(amount),
-                    ref=wallet.wallet_id, idempotency_key=idempotency_key,
+        if _sandbox.is_sandbox(wallet):
+            # Sandbox: directly credit and record
+            _credit_balance(wallet, currency, amount, 'flw_card_deposit', external_ref=tx_ref)
+            FlutterwaveTransaction.objects.create(
+                wallet=wallet, tx_ref=tx_ref, flw_tx_id='sandbox',
+                channel=channel, amount=amount, currency=currency,
+                direction='in', status='completed',
+                raw_payload={'sandbox': True},
+                timeout_at=timezone.now() + timezone.timedelta(minutes=30),
+            )
+            messages.success(request, f'🧪 [Sandbox] Credited {currency} {amount:,.2f} via Flutterwave ({channel}).')
+            return redirect('dashboard')
+
+        try:
+            client = FlutterwaveClient()
+
+            # Mobile money: direct STK push
+            if channel in (CHANNEL_MPESA, CHANNEL_AIRTEL):
+                phone = request.POST.get('phone', wallet.phone).strip()
+                network = 'MPESA' if channel == CHANNEL_MPESA else 'AIRTEL'
+                result = client.initiate_mobile_money(
+                    phone=phone, amount=float(amount), currency=currency,
+                    tx_ref=tx_ref, network=network,
+                    email=wallet.user.email if hasattr(wallet, 'user') and wallet.user.email else 'noreply@kwallet.ke',
                 )
-                airtel_ref = response.get('data', {}).get('transaction', {}).get('id', idempotency_key)
-                AirtelTransaction.objects.create(
-                    wallet=wallet, airtel_ref=airtel_ref, amount=amount, phone=phone,
-                    status='pending', transaction_type='airtel_deposit',
+                FlutterwaveTransaction.objects.create(
+                    wallet=wallet, tx_ref=tx_ref,
+                    channel=channel, amount=amount, currency=currency,
+                    phone=phone, direction='in', status='pending',
+                    raw_payload=result,
                     timeout_at=timezone.now() + timezone.timedelta(minutes=30),
                 )
-                messages.success(request, f'Airtel Money prompt sent to {phone}. Enter your Airtel PIN to complete.')
-            except Exception:
-                logger.exception('Airtel collection request failed')
-                messages.error(request, 'Airtel Money service unavailable. Please try again.')
+                messages.success(request, f'Payment prompt sent to {phone}. Enter your PIN to complete.')
+                return redirect('flw_deposit')
 
-        else:
-            # ── Safaricom M-Pesa STK push ──
-            if _sandbox.is_sandbox(wallet):
-                result = _sandbox.mock_stk_push(wallet, amount, currency='KES', rail='mpesa',
-                                                 phone=phone)
-                messages.success(request, f'🧪 [Sandbox] {result["message"]}')
-                return redirect('mpesa_deposit')
+            # Card / bank transfer: hosted payment link
+            user_email = getattr(getattr(wallet, 'user', None), 'email', '') or 'noreply@kwallet.ke'
+            user_name  = getattr(getattr(wallet, 'user', None), 'get_full_name', lambda: '')() or wallet.phone
 
-            idempotency_key = str(uuid.uuid4())
-            try:
-                client = MpesaClient()
-                response = client.stk_push(
-                    phone=phone, amount=float(amount),
-                    account_ref=wallet.wallet_id,
-                    transaction_desc='KWallet Deposit',
-                )
-                checkout_id = response.get('CheckoutRequestID', '')
-                if checkout_id:
-                    MpesaTransaction.objects.create(
-                        wallet=wallet,
-                        checkout_request_id=checkout_id,
-                        merchant_request_id=response.get('MerchantRequestID', ''),
-                        amount=amount,
-                        phone=phone,
-                        status='pending',
-                        transaction_type='mpesa_deposit',
-                        timeout_at=timezone.now() + timezone.timedelta(minutes=30),
-                    )
-                    messages.success(request, f'M-Pesa prompt sent to {phone}. Enter your PIN to complete.')
-                else:
-                    messages.error(request, 'Could not initiate M-Pesa request. Please try again.')
-            except Exception as e:
-                logger.exception('M-Pesa STK push failed')
-                messages.error(request, 'M-Pesa service unavailable. Please try again.')
+            result = client.create_payment_link(
+                amount=float(amount),
+                currency=currency,
+                customer_email=user_email,
+                customer_name=user_name,
+                customer_phone=wallet.phone,
+                tx_ref=tx_ref,
+                description=f'KWallet deposit — {wallet.wallet_id}',
+                payment_options=(
+                    'card,banktransfer' if channel == CHANNEL_BANK_TRANSFER else 'card'
+                ),
+            )
 
-        return redirect('mpesa_deposit')
+            FlutterwaveTransaction.objects.create(
+                wallet=wallet, tx_ref=tx_ref,
+                channel=channel, amount=amount, currency=currency,
+                phone=wallet.phone, direction='in', status='pending',
+                raw_payload=result,
+                timeout_at=timezone.now() + timezone.timedelta(minutes=30),
+            )
 
-    return render(request, 'wallet/mpesa_deposit.html', {
-        'wallet': wallet,
-        'mock_mode': mock_mode,
+            payment_url = result.get('data', {}).get('link', '')
+            if payment_url:
+                return redirect(payment_url)
+            messages.error(request, 'Could not create payment link. Please try again.')
+
+        except Exception:
+            logger.exception('Flutterwave deposit initiation failed')
+            messages.error(request, 'Card payment service unavailable. Please try a different method.')
+
+        return redirect('flw_deposit')
+
+    # GET
+    balances = wallet.currency_balances.all().order_by('currency')
+    return render(request, 'wallet/flw_deposit.html', {
+        'wallet':        wallet,
+        'balances':      balances,
         'home_currency': wallet.home_currency or 'KES',
-        'rates_stale': rates_are_stale(),
+        'rates_stale':   rates_are_stale(),
+        'flw_public_key': getattr(settings, 'FLUTTERWAVE_CONFIG', {}).get('PUBLIC_KEY', ''),
     })
 
 
-# ─────────────────────────────────────────────
-# Deposit — Airtel Money
-# ─────────────────────────────────────────────
-
 @wallet_required
-def airtel_deposit_view(request, wallet):
-    if request.method == 'POST':
-        allowed, _ = _check_rate_limit('deposit', str(wallet.wallet_id), 10, 3600)
-        if not allowed:
-            messages.error(request, 'Too many deposit requests. Please wait.')
-            return redirect('mpesa_deposit')
+def flw_redirect_view(request, wallet):
+    """
+    Flutterwave redirects back here after the hosted payment page.
+    URL params: status, tx_ref, transaction_id
+    Risk #02: always verify server-side before crediting — never trust the redirect params alone.
+    """
+    status         = request.GET.get('status', '')
+    tx_ref         = request.GET.get('tx_ref', '')
+    transaction_id = request.GET.get('transaction_id', '')
 
-        phone = request.POST.get('phone', '').strip()
-        amount_str = request.POST.get('amount', '').strip()
-        try:
-            amount = Decimal(amount_str)
-            if amount <= 0:
-                raise InvalidOperation
-        except (InvalidOperation, TypeError):
-            messages.error(request, 'Invalid amount.')
-            return redirect('mpesa_deposit')
+    if status != 'successful' or not tx_ref or not transaction_id:
+        messages.error(request, 'Payment was not completed or was cancelled.')
+        return redirect('flw_deposit')
 
-        client = AirtelClient()
-        if not client.validate_ke_number(phone):
-            messages.error(request, 'Please enter a valid Airtel Kenya number (073x, 075x, 078x).')
-            return redirect('mpesa_deposit')
+    # Find the pending record
+    try:
+        flw_txn = FlutterwaveTransaction.objects.get(
+            wallet=wallet, tx_ref=tx_ref, direction='in',
+        )
+    except FlutterwaveTransaction.DoesNotExist:
+        messages.error(request, 'Unknown transaction reference.')
+        return redirect('flw_deposit')
 
-        idempotency_key = str(uuid.uuid4())
-        try:
-            response = client.collection_request(phone=phone, amount=float(amount),
-                                                  ref=wallet.wallet_id,
-                                                  idempotency_key=idempotency_key)
-            airtel_ref = response.get('data', {}).get('transaction', {}).get('id', idempotency_key)
-            AirtelTransaction.objects.create(
-                wallet=wallet,
-                airtel_ref=airtel_ref,
-                amount=amount,
-                phone=phone,
-                status='pending',
-                transaction_type='airtel_deposit',
-                timeout_at=timezone.now() + timezone.timedelta(minutes=30),
+    if flw_txn.status == 'completed':
+        messages.info(request, 'This payment has already been credited to your wallet.')
+        return redirect('dashboard')
+
+    # Risk #02: verify with Flutterwave before crediting
+    try:
+        client = FlutterwaveClient()
+        verify = client.verify_transaction(transaction_id)
+        data   = verify.get('data', {})
+
+        if (
+            verify.get('status') == 'success'
+            and data.get('status') == 'successful'
+            and data.get('tx_ref') == tx_ref
+            and float(data.get('amount', 0)) >= float(flw_txn.amount)
+            and data.get('currency', '').upper() == flw_txn.currency.upper()
+        ):
+            flw_txn.flw_tx_id   = str(transaction_id)
+            flw_txn.fee         = Decimal(str(data.get('app_fee', 0)))
+            flw_txn.status      = 'completed'
+            flw_txn.raw_payload = data
+            flw_txn.save()
+
+            txn_type_map = {
+                CHANNEL_CARD:          'flw_card_deposit',
+                CHANNEL_BANK_TRANSFER: 'flw_bank_deposit',
+                CHANNEL_MPESA:         'flw_mobile_deposit',
+                CHANNEL_AIRTEL:        'flw_mobile_deposit',
+            }
+            txn_type = txn_type_map.get(flw_txn.channel, 'flw_card_deposit')
+            _credit_balance(
+                wallet, flw_txn.currency, flw_txn.amount,
+                txn_type, external_ref=tx_ref, fee=flw_txn.fee,
             )
-            messages.success(request, f'Airtel Money prompt sent to {phone}. Enter your Airtel PIN to complete.')
-        except Exception:
-            logger.exception('Airtel collection request failed')
-            messages.error(request, 'Airtel Money service unavailable. Please try again.')
+            messages.success(request, f'{flw_txn.currency} {flw_txn.amount:,.2f} credited to your wallet.')
+        else:
+            flw_txn.status = 'failed'
+            flw_txn.raw_payload = data
+            flw_txn.save()
+            messages.error(request, 'Payment verification failed. Contact support if funds were deducted.')
 
-        return redirect('mpesa_deposit')
+    except Exception:
+        logger.exception('Flutterwave payment verification failed')
+        messages.error(request, 'Could not verify payment. Contact support with reference: ' + tx_ref)
 
-    return redirect('mpesa_deposit')
-
-
-# ─────────────────────────────────────────────
-# Deposit — Bank Transfer notification
-# ─────────────────────────────────────────────
-
-@wallet_required
-def bank_deposit_notify_view(request, wallet):
-    if request.method == 'POST':
-        amount_str = request.POST.get('amount', '').strip()
-        bank_name  = request.POST.get('bank_name', '').strip()
-        bank_ref   = request.POST.get('bank_ref', '').strip()
-        account_number = request.POST.get('account_number', '').strip()
-
-        if not bank_name:
-            messages.error(request, 'Bank name is required.')
-            return redirect('mpesa_deposit')
-        if not bank_ref:
-            messages.error(request, 'Transaction reference / receipt is required.')
-            return redirect('mpesa_deposit')
-
-        try:
-            amount = Decimal(amount_str)
-            if amount <= 0:
-                raise InvalidOperation
-        except (InvalidOperation, TypeError):
-            messages.error(request, 'Invalid amount.')
-            return redirect('mpesa_deposit')
-
-        # Check for duplicate reference
-        if BankTransaction.objects.filter(pesalink_ref=bank_ref).exists():
-            messages.error(request, 'This transaction reference has already been submitted.')
-            return redirect('mpesa_deposit')
-
-        with db_transaction.atomic():
-            BankTransaction.objects.create(
-                wallet=wallet,
-                pesalink_ref=bank_ref,
-                amount=amount,
-                bank_name=bank_name,
-                account_number=account_number or '',
-                account_name=wallet.wallet_user.get_full_name() if wallet.wallet_user else '',
-                status='pending',
-                transaction_type='bank_deposit',
-                timeout_at=timezone.now() + timezone.timedelta(hours=4),
-            )
-            Transaction.objects.create(
-                wallet=wallet,
-                transaction_type='bank_deposit',
-                currency='KES',
-                amount=amount,
-                fee=0,
-                status='pending',
-                details=f'Bank deposit — {bank_name}, ref {bank_ref}',
-                external_ref=bank_ref,
-            )
-        messages.success(request, 'Deposit notification received. Funds will be credited once confirmed by our team (usually within 2 hours). Reference: ' + bank_ref)
-        return redirect('mpesa_deposit')
-
-    return redirect('mpesa_deposit')
+    return redirect('dashboard')
 
 
 @csrf_exempt
-@require_POST
-def bank_deposit_webhook(request):
+def flw_webhook(request):
     """
-    Webhook for bank/PesaLink to notify confirmed deposits.
-    Expects JSON: {pesalink_ref, amount, status}
+    Flutterwave webhook — receives payment and transfer events.
+    Risk #05: verified via verif-hash header + IP allowlist.
+    Risk #02: idempotency — re-checks status before any credit.
     """
-    try:
-        body = json.loads(request.body)
-        ref    = body.get('pesalink_ref', '')
-        status = body.get('status', '')
-        amount = Decimal(str(body.get('amount', 0)))
-    except (json.JSONDecodeError, InvalidOperation):
-        return JsonResponse({'error': 'bad payload'}, status=400)
+    if request.method != 'POST':
+        return HttpResponseBadRequest('Method not allowed')
+
+    client = FlutterwaveClient()
+
+    # Risk #05: IP allowlist
+    forwarded = request.META.get('HTTP_X_FORWARDED_FOR', '')
+    remote_ip = forwarded.split(',')[0].strip() if forwarded else request.META.get('REMOTE_ADDR', '')
+    if not client.verify_webhook_ip(remote_ip):
+        logger.warning(f'FLW webhook rejected: IP {remote_ip} not in allowlist')
+        return HttpResponseForbidden('Forbidden')
+
+    # Risk #05: secret-hash verification
+    secret_hash = request.META.get('HTTP_VERIF_HASH', '')
+    if not client.verify_webhook_signature(request.body, secret_hash):
+        logger.warning('FLW webhook rejected: invalid verif-hash')
+        return HttpResponseForbidden('Forbidden')
 
     try:
-        with db_transaction.atomic():
-            btxn = BankTransaction.objects.select_for_update().get(
-                pesalink_ref=ref, status='pending'
-            )
-            if status == 'confirmed':
-                btxn.status = 'completed'
-                btxn.save()
-                _credit_balance(btxn.wallet, 'KES', amount, 'bank_deposit',
-                                external_ref=ref, fee=Decimal('0'))
-                _pool_in(btxn.wallet, 'KES', amount, ref)
-                # Update pending Transaction record
-                Transaction.objects.filter(
-                    wallet=btxn.wallet,
-                    transaction_type='bank_deposit',
-                    external_ref=ref,
-                    status='pending',
-                ).update(status='completed')
-            elif status == 'failed':
-                btxn.status = 'failed'
-                btxn.save()
-                Transaction.objects.filter(
-                    wallet=btxn.wallet,
-                    transaction_type='bank_deposit',
-                    external_ref=ref,
-                    status='pending',
-                ).update(status='failed')
-    except BankTransaction.DoesNotExist:
-        return JsonResponse({'error': 'not found'}, status=404)
+        payload = json.loads(request.body)
+    except json.JSONDecodeError:
+        return HttpResponseBadRequest('Invalid JSON')
+
+    event     = payload.get('event', '')
+    data      = payload.get('data', {})
+    tx_ref    = data.get('tx_ref', '') or data.get('reference', '')
+    flw_tx_id = str(data.get('id', ''))
+
+    logger.info(f'FLW webhook event={event} tx_ref={tx_ref} id={flw_tx_id}')
+
+    # ── Deposit / collection confirmed ──
+    if event in ('charge.completed', 'charge.failed'):
+        try:
+            flw_txn = FlutterwaveTransaction.objects.get(tx_ref=tx_ref, direction='in')
+        except FlutterwaveTransaction.DoesNotExist:
+            logger.warning(f'FLW webhook: unknown tx_ref {tx_ref}')
+            return JsonResponse({'status': 'ok'})  # acknowledge anyway
+
+        if flw_txn.status == 'completed':
+            return JsonResponse({'status': 'ok'})  # already processed (Risk #02)
+
+        if event == 'charge.completed' and data.get('status') == 'successful':
+            # Server-side verify before crediting (Risk #02 defence-in-depth)
+            verify = client.verify_transaction(flw_tx_id)
+            vdata  = verify.get('data', {})
+            if (
+                verify.get('status') == 'success'
+                and vdata.get('status') == 'successful'
+                and vdata.get('tx_ref') == tx_ref
+                and float(vdata.get('amount', 0)) >= float(flw_txn.amount)
+            ):
+                flw_txn.flw_tx_id   = flw_tx_id
+                flw_txn.fee         = Decimal(str(vdata.get('app_fee', 0)))
+                flw_txn.status      = 'completed'
+                flw_txn.raw_payload = vdata
+                flw_txn.save()
+
+                txn_type_map = {
+                    CHANNEL_CARD:          'flw_card_deposit',
+                    CHANNEL_BANK_TRANSFER: 'flw_bank_deposit',
+                    CHANNEL_MPESA:         'flw_mobile_deposit',
+                    CHANNEL_AIRTEL:        'flw_mobile_deposit',
+                }
+                txn_type = txn_type_map.get(flw_txn.channel, 'flw_card_deposit')
+                _credit_balance(
+                    flw_txn.wallet, flw_txn.currency, flw_txn.amount,
+                    txn_type, external_ref=tx_ref, fee=flw_txn.fee,
+                )
+        else:
+            flw_txn.status      = 'failed'
+            flw_txn.raw_payload = data
+            flw_txn.save()
+
+    # ── Transfer / payout confirmed ──
+    elif event in ('transfer.completed', 'transfer.failed'):
+        try:
+            flw_txn = FlutterwaveTransaction.objects.get(tx_ref=tx_ref, direction='out')
+        except FlutterwaveTransaction.DoesNotExist:
+            logger.warning(f'FLW webhook: unknown payout tx_ref {tx_ref}')
+            return JsonResponse({'status': 'ok'})
+
+        if flw_txn.status in ('completed', 'failed'):
+            return JsonResponse({'status': 'ok'})
+
+        new_status  = 'completed' if event == 'transfer.completed' else 'failed'
+        flw_txn.status      = new_status
+        flw_txn.flw_tx_id   = flw_tx_id
+        flw_txn.raw_payload = data
+        flw_txn.save()
+
+        if new_status == 'failed':
+            # Refund the debited balance (Risk #04)
+            _refund_balance(flw_txn.wallet, flw_txn.currency, flw_txn.amount, ref=tx_ref)
 
     return JsonResponse({'status': 'ok'})
 
 
-# ─────────────────────────────────────────────
-# M-Pesa Callback (STK push result)
-# ─────────────────────────────────────────────
-
-@csrf_exempt
-@require_POST
-def mpesa_callback(request):
+@wallet_required
+def flw_payout_view(request, wallet):
     """
-    Risk #02: select_for_update prevents double-credit.
-    Risk #05: IP allowlist + HMAC secret verified before processing.
+    Initiate a Flutterwave payout — bank transfer or mobile money out.
+    Subject to the same progressive daily/monthly/per-txn limits as other withdrawals.
     """
-    # Risk #05: verify Safaricom IP
-    client = MpesaClient()
-    client_ip = get_client_ip(request)
-    if not client.verify_callback_ip(client_ip):
-        logger.warning(f'M-Pesa callback from unallowed IP: {client_ip}')
-        return JsonResponse({'ResultCode': 1, 'ResultDesc': 'Unauthorised'}, status=403)
+    if not wallet.kyc_status == 'verified' and not _sandbox.is_sandbox(wallet):
+        messages.error(request, 'KYC verification required for payouts.')
+        return redirect('kyc_start')
 
-    # Risk #05: verify HMAC secret header
-    secret = request.headers.get('X-Safaricom-Secret', '')
-    if not client.verify_callback_secret(secret):
-        logger.warning('M-Pesa callback HMAC secret mismatch')
-        return JsonResponse({'ResultCode': 1, 'ResultDesc': 'Unauthorised'}, status=403)
+    if request.method == 'POST':
+        allowed, _ = _check_rate_limit('flw_payout', str(wallet.wallet_id), 5, 3600)
+        if not allowed:
+            messages.error(request, 'Too many payout requests. Please wait before trying again.')
+            return redirect('flw_payout')
 
-    try:
-        body = json.loads(request.body)
-        stk = body['Body']['stkCallback']
-        checkout_id = stk['CheckoutRequestID']
-        result_code = stk['ResultCode']
-    except (KeyError, json.JSONDecodeError) as e:
-        logger.error(f'Malformed M-Pesa callback: {e}')
-        return JsonResponse({'ResultCode': 1, 'ResultDesc': 'Bad payload'}, status=400)
+        payout_type = request.POST.get('payout_type', 'bank')  # 'bank' | 'mobile'
+        currency    = request.POST.get('currency', 'KES').strip().upper()
+        amount_str  = request.POST.get('amount', '').strip()
 
-    try:
-        # Risk #02: atomic select_for_update — only one credit per checkout_id
-        with db_transaction.atomic():
-            mpesa_txn = MpesaTransaction.objects.select_for_update().get(
-                checkout_request_id=checkout_id, status='pending'
+        try:
+            amount = Decimal(amount_str)
+            if amount <= 0:
+                raise InvalidOperation
+        except (InvalidOperation, TypeError):
+            messages.error(request, 'Invalid amount.')
+            return redirect('flw_payout')
+
+        # Progressive limit enforcement
+        eff_limits    = wallet.get_effective_limits()
+        daily_limit   = eff_limits['daily']
+        per_txn_max   = eff_limits['per_txn']
+        monthly_limit = eff_limits['monthly']
+
+        if float(amount) > per_txn_max:
+            messages.error(request, f'Single payout limit is KES {per_txn_max:,.0f} for your current tier.')
+            return redirect('flw_payout')
+
+        daily_used = wallet.get_daily_withdrawn()
+        if daily_used + float(amount) > daily_limit:
+            messages.error(request, f'Exceeds daily limit of KES {daily_limit:,.0f}.')
+            return redirect('flw_payout')
+
+        monthly_used = wallet.get_monthly_withdrawn()
+        if monthly_used + float(amount) > monthly_limit:
+            messages.error(request, f'Exceeds monthly limit of KES {monthly_limit:,.0f}.')
+            return redirect('flw_payout')
+
+        _check_aml_velocity(wallet, amount if currency == 'KES' else Decimal('0'))
+
+        # Check balance
+        try:
+            cb = wallet.currency_balances.get(currency=currency)
+        except CurrencyBalance.DoesNotExist:
+            messages.error(request, f'You have no {currency} balance.')
+            return redirect('flw_payout')
+
+        if cb.balance < amount:
+            messages.error(request, f'Insufficient {currency} balance. Available: {currency} {cb.balance:,.2f}')
+            return redirect('flw_payout')
+
+        tx_ref = f'kwallet_out_{wallet.wallet_id}_{uuid.uuid4().hex[:12]}'
+
+        if _sandbox.is_sandbox(wallet):
+            _debit_balance(wallet, currency, amount, 'flw_bank_payout', idempotency_key=tx_ref)
+            FlutterwaveTransaction.objects.create(
+                wallet=wallet, tx_ref=tx_ref, flw_tx_id='sandbox',
+                channel='bank_payout', amount=amount, currency=currency,
+                direction='out', status='completed',
+                raw_payload={'sandbox': True},
             )
-            if result_code == 0:
-                # Extract M-Pesa receipt
-                items = stk.get('CallbackMetadata', {}).get('Item', [])
-                meta  = {i['Name']: i.get('Value') for i in items}
-                receipt = meta.get('MpesaReceiptNumber', '')
-                amount  = Decimal(str(meta.get('Amount', mpesa_txn.amount)))
+            messages.success(request, f'🧪 [Sandbox] Payout of {currency} {amount:,.2f} queued.')
+            return redirect('dashboard')
 
-                # Risk #05: validate amount matches what we requested
-                if abs(amount - mpesa_txn.amount) > Decimal('0.01'):
-                    logger.error(f'M-Pesa amount mismatch: expected {mpesa_txn.amount}, got {amount}')
-                    mpesa_txn.status = 'failed'
-                    mpesa_txn.save()
-                    return JsonResponse({'ResultCode': 1, 'ResultDesc': 'Amount mismatch'})
+        try:
+            client  = FlutterwaveClient()
+            channel = 'bank_payout'
 
-                mpesa_txn.status = 'completed'
-                mpesa_txn.mpesa_receipt = receipt
-                mpesa_txn.save()
-
-                _credit_balance(mpesa_txn.wallet, 'KES', amount, 'mpesa_deposit',
-                                external_ref=receipt, fee=Decimal('0'))
-                _pool_in(mpesa_txn.wallet, 'KES', amount, receipt)
-
+            if payout_type == 'mobile':
+                phone   = request.POST.get('phone', wallet.phone).strip()
+                network = request.POST.get('network', 'mpesa')
+                channel = 'mobile_payout'
+                result  = client.initiate_mobile_money_payout(
+                    phone=phone, amount=float(amount), currency=currency,
+                    narration=f'KWallet payout {wallet.wallet_id}',
+                    reference=tx_ref, network=network,
+                )
             else:
-                mpesa_txn.status = 'failed'
-                mpesa_txn.save()
+                bank_code   = request.POST.get('bank_code', '').strip()
+                account_num = request.POST.get('account_number', '').strip()
+                account_name= request.POST.get('account_name', '').strip()
+                if not bank_code or not account_num:
+                    messages.error(request, 'Bank code and account number are required.')
+                    return redirect('flw_payout')
+                result = client.initiate_transfer(
+                    account_bank=bank_code,
+                    account_number=account_num,
+                    amount=float(amount),
+                    currency=currency,
+                    narration=f'KWallet payout {wallet.wallet_id}',
+                    reference=tx_ref,
+                    beneficiary_name=account_name,
+                )
 
-    except MpesaTransaction.DoesNotExist:
-        # Risk #05: replay attack guard — already completed or unknown
-        logger.warning(f'M-Pesa callback for unknown/completed checkout: {checkout_id}')
-
-    return JsonResponse({'ResultCode': 0, 'ResultDesc': 'Accepted'})
-
-
-@csrf_exempt
-@require_POST
-def mpesa_b2c_result(request):
-    """B2C withdrawal result callback. Risk #04: resolve pending withdrawal."""
-    client = MpesaClient()
-    client_ip = get_client_ip(request)
-    if not client.verify_callback_ip(client_ip):
-        return JsonResponse({'ResultCode': 1, 'ResultDesc': 'Unauthorised'}, status=403)
-
-    try:
-        body = json.loads(request.body)
-        result = body['Result']
-        result_code = result['ResultCode']
-        conversation_id = result.get('ConversationID', '')
-    except (KeyError, json.JSONDecodeError):
-        return JsonResponse({'ResultCode': 1, 'ResultDesc': 'Bad payload'}, status=400)
-
-    try:
-        with db_transaction.atomic():
-            mpesa_txn = MpesaTransaction.objects.select_for_update().get(
-                checkout_request_id=conversation_id, status='pending'
-            )
-            if result_code == 0:
-                mpesa_txn.status = 'completed'
-                mpesa_txn.save()
-                # Update wallet transaction to completed
-                Transaction.objects.filter(
-                    wallet=mpesa_txn.wallet,
-                    transaction_type='mpesa_withdraw',
-                    external_ref=conversation_id,
-                    status='pending',
-                ).update(status='completed')
-                _pool_out(mpesa_txn.wallet, 'KES', mpesa_txn.amount, conversation_id)
+            if result.get('status') in ('success', 'ok'):
+                flw_id = str(result.get('data', {}).get('id', ''))
+                # Debit balance now; refund if payout webhook comes back failed (Risk #04)
+                _debit_balance(wallet, currency, amount,
+                               'flw_mobile_payout' if channel == 'mobile_payout' else 'flw_bank_payout',
+                               idempotency_key=tx_ref)
+                FlutterwaveTransaction.objects.create(
+                    wallet=wallet, tx_ref=tx_ref, flw_tx_id=flw_id,
+                    channel=channel, amount=amount, currency=currency,
+                    phone=request.POST.get('phone', ''),
+                    direction='out', status='pending',
+                    raw_payload=result.get('data', {}),
+                    timeout_at=timezone.now() + timezone.timedelta(hours=24),
+                )
+                messages.success(request, f'Payout of {currency} {amount:,.2f} queued. Ref: {tx_ref}')
+                return redirect('dashboard')
             else:
-                # Risk #04: refund on B2C failure
-                mpesa_txn.status = 'failed'
-                mpesa_txn.save()
-                _refund_balance(mpesa_txn.wallet, 'KES', mpesa_txn.amount, conversation_id)
-    except MpesaTransaction.DoesNotExist:
-        pass
+                messages.error(request, 'Payout request failed. Please try again.')
 
-    return JsonResponse({'ResultCode': 0, 'ResultDesc': 'Accepted'})
+        except Exception:
+            logger.exception('Flutterwave payout initiation failed')
+            messages.error(request, 'Payout service unavailable. Please try again.')
 
+        return redirect('flw_payout')
 
-@csrf_exempt
-@require_POST
-def airtel_callback(request):
-    """
-    Airtel Money callback — collection (deposit) and disbursement (withdrawal).
-    Risk #02: select_for_update prevents double-credit.
-    Risk #05: shared-secret header verified.
-    """
-    client = AirtelClient()
-    client_ip = get_client_ip(request)
-    if not client.verify_callback_ip(client_ip):
-        logger.warning(f'Airtel callback from unallowed IP: {client_ip}')
-        return JsonResponse({'status': 'error'}, status=403)
-
-    secret = request.headers.get('X-Airtel-Signature', '')
-    if not client.verify_callback_secret(secret):
-        logger.warning('Airtel callback secret mismatch')
-        return JsonResponse({'status': 'error'}, status=403)
-
-    try:
-        body = json.loads(request.body)
-        txn_data = body.get('transaction', {})
-        airtel_ref   = txn_data.get('id', '')
-        status_code  = txn_data.get('status_code', 'TS')
-        amount       = Decimal(str(txn_data.get('amount', 0)))
-    except (KeyError, json.JSONDecodeError, InvalidOperation):
-        return JsonResponse({'status': 'error'}, status=400)
-
-    try:
-        with db_transaction.atomic():
-            airtel_txn = AirtelTransaction.objects.select_for_update().get(
-                airtel_ref=airtel_ref, status='pending'
-            )
-            if status_code == 'TS':  # Transaction Successful
-                airtel_txn.status = 'completed'
-                airtel_txn.save()
-                if airtel_txn.transaction_type == 'airtel_deposit':
-                    _credit_balance(airtel_txn.wallet, 'KES', amount, 'airtel_deposit',
-                                    external_ref=airtel_ref, fee=Decimal('0'))
-                    _pool_in(airtel_txn.wallet, 'KES', amount, airtel_ref)
-                else:
-                    Transaction.objects.filter(
-                        wallet=airtel_txn.wallet,
-                        transaction_type='airtel_withdraw',
-                        external_ref=airtel_ref,
-                        status='pending',
-                    ).update(status='completed')
-                    _pool_out(airtel_txn.wallet, 'KES', amount, airtel_ref)
-            else:
-                airtel_txn.status = 'failed'
-                airtel_txn.save()
-                if airtel_txn.transaction_type == 'airtel_withdraw':
-                    _refund_balance(airtel_txn.wallet, 'KES', amount, airtel_ref)
-    except AirtelTransaction.DoesNotExist:
-        logger.warning(f'Airtel callback for unknown/completed ref: {airtel_ref}')
-
-    return JsonResponse({'status': 'success'})
+    # GET
+    limits = wallet.get_effective_limits()
+    tier   = wallet.get_limit_tier()
+    return render(request, 'wallet/flw_payout.html', {
+        'wallet':        wallet,
+        'home_currency': wallet.home_currency or 'KES',
+        'daily_withdrawn': float(wallet.get_daily_withdrawn()),
+        'daily_limit':   limits['daily'],
+        'monthly_limit': limits['monthly'],
+        'per_txn_limit': limits['per_txn'],
+        'daily_pct':     wallet.get_daily_pct(),
+        'limit_tier':    tier,
+        'limit_tier_label': LIMIT_TIERS[tier]['label'],
+        'rates_stale':   rates_are_stale(),
+    })
 
 
 # ─────────────────────────────────────────────
@@ -813,378 +800,12 @@ def airtel_callback(request):
 
 @wallet_required
 def withdraw_view(request, wallet):
-    daily_withdrawn = float(wallet.get_daily_withdrawn())
-    daily_pct       = wallet.get_daily_pct()
-    kes_balance     = wallet.get_kes_balance()
-    limits          = wallet.get_effective_limits()
-    tier            = wallet.get_limit_tier()
-    return render(request, 'wallet/withdraw.html', {
-        'wallet':          wallet,
-        'bank_choices':    BANK_CHOICES,
-        'kes_balance':     kes_balance,
-        'home_currency':   wallet.home_currency or 'KES',
-        'rates_stale':     rates_are_stale(),
-        'daily_withdrawn': daily_withdrawn,
-        'daily_limit':     limits['daily'],
-        'monthly_limit':   limits['monthly'],
-        'per_txn_limit':   limits['per_txn'],
-        'daily_pct':       daily_pct,
-        'limit_tier':      tier,
-        'limit_tier_label': LIMIT_TIERS[tier]['label'],
-    })
+    """Legacy /withdraw/ URL — redirects to Flutterwave payout (unified payout page)."""
+    return redirect('flw_payout')
+
 
 
 # ─────────────────────────────────────────────
-# Withdraw — M-Pesa B2C
-# ─────────────────────────────────────────────
-
-@wallet_required
-def mpesa_withdraw_view(request, wallet):
-    if request.method != 'POST':
-        return redirect('withdraw')
-
-    if wallet.kyc_status != 'verified' and not _sandbox.is_sandbox(wallet):
-        messages.error(request, 'Identity verification required before withdrawals.')
-        return redirect('withdraw')
-
-    # Risk #08: rate limit withdrawals
-    allowed, _ = _check_rate_limit('withdraw', str(wallet.wallet_id), 10, 3600)
-    if not allowed:
-        messages.error(request, 'Too many withdrawal requests. Please try again later.')
-        return redirect('withdraw')
-
-    phone = request.POST.get('phone', wallet.phone).strip() or wallet.phone
-    amount_str = request.POST.get('amount', '').strip()
-    try:
-        amount = Decimal(amount_str)
-        if amount <= 0:
-            raise InvalidOperation
-    except (InvalidOperation, TypeError):
-        messages.error(request, 'Invalid amount.')
-        return redirect('withdraw')
-
-    fee   = Decimal(str(get_withdraw_fee(float(amount))))
-    total = amount + fee
-
-    # Risk #16: AML daily limit check (progressive tier)
-    daily_used  = wallet.get_daily_withdrawn()
-    eff_limits  = wallet.get_effective_limits()
-    daily_limit = eff_limits['daily']
-    per_txn_max = eff_limits['per_txn']
-
-    if float(amount) > per_txn_max:
-        messages.error(request, f'Single transaction limit is KES {per_txn_max:,.0f} for your current tier.')
-        return redirect('withdraw')
-
-    if daily_used + float(total) > daily_limit:
-        messages.error(request, f'This would exceed your daily withdrawal limit of KES {daily_limit:,.0f}.')
-        return redirect('withdraw')
-
-    monthly_used  = wallet.get_monthly_withdrawn()
-    monthly_limit = eff_limits['monthly']
-    if monthly_used + float(total) > monthly_limit:
-        messages.error(request, f'This would exceed your monthly withdrawal limit of KES {monthly_limit:,.0f}.')
-        return redirect('withdraw')
-
-    # Risk #16: AML velocity checks
-    _check_aml_velocity(wallet, amount)
-
-    # Balance check
-    kes_balance = wallet.get_kes_balance()
-    if total > Decimal(str(kes_balance)):
-        messages.error(request, f'Insufficient balance. Available: KES {kes_balance:,.2f}')
-        return redirect('withdraw')
-
-    # Sandbox: mock withdrawal, skip real B2C rail
-    if _sandbox.is_sandbox(wallet):
-        result = _sandbox.mock_b2c_withdraw(wallet, amount, currency='KES',
-                                             phone=phone, rail='mpesa')
-        if result['status'] == 'completed':
-            messages.success(request, f'🧪 Sandbox: KES {amount:,.2f} withdrawal simulated to {phone} ({result["receipt"]}).')
-        else:
-            messages.error(request, f'🧪 Sandbox error: {result["message"]}')
-        return redirect('withdraw')
-
-    idempotency_key = str(uuid.uuid4())
-    try:
-        with db_transaction.atomic():
-            # Debit balance atomically before initiating B2C
-            _debit_balance(wallet, 'KES', total, 'mpesa_withdraw',
-                           fee=fee, idempotency_key=idempotency_key)
-
-            client = MpesaClient()
-            response = client.b2c_payment(
-                phone=phone, amount=float(amount),
-                remarks=f'KWallet withdrawal {wallet.wallet_id}',
-            )
-            conversation_id = response.get('ConversationID', idempotency_key)
-
-            MpesaTransaction.objects.create(
-                wallet=wallet,
-                checkout_request_id=conversation_id,
-                amount=amount,
-                phone=phone,
-                status='pending',
-                transaction_type='mpesa_withdraw',
-                # Risk #04: auto-timeout for orphaned withdrawal
-                timeout_at=timezone.now() + timezone.timedelta(minutes=30),
-            )
-        messages.success(request, f'Withdrawal of KES {amount:,.2f} is being processed to {phone}.')
-    except Exception:
-        logger.exception('M-Pesa B2C withdraw failed')
-        # Risk #04: reverse debit if B2C initiation failed
-        try:
-            _refund_balance(wallet, 'KES', total, idempotency_key)
-        except Exception:
-            logger.exception('Refund also failed — manual reconciliation needed')
-        messages.error(request, 'Withdrawal failed. Your balance has been restored. Please try again.')
-
-    return redirect('withdraw')
-
-
-# ─────────────────────────────────────────────
-# Withdraw — Airtel Money
-# ─────────────────────────────────────────────
-
-@wallet_required
-def airtel_withdraw_view(request, wallet):
-    if request.method != 'POST':
-        return redirect('withdraw')
-
-    if wallet.kyc_status != 'verified' and not _sandbox.is_sandbox(wallet):
-        messages.error(request, 'Identity verification required before withdrawals.')
-        return redirect('withdraw')
-
-    allowed, _ = _check_rate_limit('withdraw', str(wallet.wallet_id), 10, 3600)
-    if not allowed:
-        messages.error(request, 'Too many withdrawal requests.')
-        return redirect('withdraw')
-
-    phone = request.POST.get('phone', '').strip()
-    amount_str = request.POST.get('amount', '').strip()
-    try:
-        amount = Decimal(amount_str)
-        if amount <= 0:
-            raise InvalidOperation
-    except (InvalidOperation, TypeError):
-        messages.error(request, 'Invalid amount.')
-        return redirect('withdraw')
-
-    airtel_client = AirtelClient()
-    if not airtel_client.validate_ke_number(phone):
-        messages.error(request, 'Invalid Airtel Kenya number. Supported prefixes: 073x, 075x, 078x.')
-        return redirect('withdraw')
-
-    fee   = Decimal(str(get_withdraw_fee(float(amount))))
-    total = amount + fee
-
-    eff_limits  = wallet.get_effective_limits()
-    daily_limit = eff_limits['daily']
-    per_txn_max = eff_limits['per_txn']
-
-    if float(amount) > per_txn_max:
-        messages.error(request, f'Single transaction limit is KES {per_txn_max:,.0f} for your current tier.')
-        return redirect('withdraw')
-
-    daily_used = wallet.get_daily_withdrawn()
-    if daily_used + float(total) > daily_limit:
-        messages.error(request, f'Exceeds daily limit of KES {daily_limit:,.0f}.')
-        return redirect('withdraw')
-
-    monthly_used  = wallet.get_monthly_withdrawn()
-    monthly_limit = eff_limits['monthly']
-    if monthly_used + float(total) > monthly_limit:
-        messages.error(request, f'Exceeds monthly limit of KES {monthly_limit:,.0f}.')
-        return redirect('withdraw')
-
-    _check_aml_velocity(wallet, amount)
-
-    kes_balance = wallet.get_kes_balance()
-    if total > Decimal(str(kes_balance)):
-        messages.error(request, f'Insufficient balance. Available: KES {kes_balance:,.2f}')
-        return redirect('withdraw')
-
-    # Sandbox: mock withdrawal, skip real Airtel rail
-    if _sandbox.is_sandbox(wallet):
-        result = _sandbox.mock_b2c_withdraw(wallet, amount, currency='KES',
-                                             phone=phone, rail='airtel')
-        if result['status'] == 'completed':
-            messages.success(request, f'🧪 Sandbox: KES {amount:,.2f} Airtel withdrawal simulated to {phone} ({result["receipt"]}).')
-        else:
-            messages.error(request, f'🧪 Sandbox error: {result["message"]}')
-        return redirect('withdraw')
-
-    idempotency_key = str(uuid.uuid4())
-    try:
-        with db_transaction.atomic():
-            _debit_balance(wallet, 'KES', total, 'airtel_withdraw',
-                           fee=fee, idempotency_key=idempotency_key)
-            response = airtel_client.disbursement_request(
-                phone=phone, amount=float(amount),
-                ref=wallet.wallet_id, idempotency_key=idempotency_key,
-            )
-            airtel_ref = response.get('data', {}).get('transaction', {}).get('id', idempotency_key)
-            AirtelTransaction.objects.create(
-                wallet=wallet, airtel_ref=airtel_ref, amount=amount, phone=phone,
-                status='pending', transaction_type='airtel_withdraw',
-                timeout_at=timezone.now() + timezone.timedelta(minutes=30),
-            )
-        messages.success(request, f'Airtel Money withdrawal of KES {amount:,.2f} is being processed to {phone}.')
-    except Exception:
-        logger.exception('Airtel disbursement failed')
-        try:
-            _refund_balance(wallet, 'KES', total, idempotency_key)
-        except Exception:
-            logger.exception('Refund also failed')
-        messages.error(request, 'Withdrawal failed. Your balance has been restored.')
-
-    return redirect('withdraw')
-
-
-# ─────────────────────────────────────────────
-# Withdraw — Bank Transfer
-# ─────────────────────────────────────────────
-
-@wallet_required
-def bank_withdraw_view(request, wallet):
-    if request.method != 'POST':
-        return redirect('withdraw')
-
-    if wallet.kyc_status != 'verified' and not _sandbox.is_sandbox(wallet):
-        messages.error(request, 'Identity verification required.')
-        return redirect('withdraw')
-
-    allowed, _ = _check_rate_limit('withdraw', str(wallet.wallet_id), 5, 3600)
-    if not allowed:
-        messages.error(request, 'Too many withdrawal requests.')
-        return redirect('withdraw')
-
-    bank_name      = request.POST.get('bank_name', '').strip()
-    account_number = request.POST.get('account_number', '').strip()
-    account_name   = request.POST.get('account_name', '').strip()
-    amount_str     = request.POST.get('amount', '').strip()
-
-    if not all([bank_name, account_number, account_name]):
-        messages.error(request, 'Bank name, account number and account name are all required.')
-        return redirect('withdraw')
-
-    try:
-        amount = Decimal(amount_str)
-        if amount < 500:
-            raise InvalidOperation
-    except (InvalidOperation, TypeError):
-        messages.error(request, 'Minimum bank transfer amount is KES 500.')
-        return redirect('withdraw')
-
-    fee   = Decimal(str(BANK_WITHDRAW_FEE))
-    total = amount + fee
-
-    eff_limits  = wallet.get_effective_limits()
-    daily_limit = eff_limits['daily']
-    per_txn_max = eff_limits['per_txn']
-
-    if float(amount) > per_txn_max:
-        messages.error(request, f'Single transaction limit is KES {per_txn_max:,.0f} for your current tier.')
-        return redirect('withdraw')
-
-    daily_used = wallet.get_daily_withdrawn()
-    if daily_used + float(total) > daily_limit:
-        messages.error(request, f'Exceeds daily limit of KES {daily_limit:,.0f}.')
-        return redirect('withdraw')
-
-    monthly_used  = wallet.get_monthly_withdrawn()
-    monthly_limit = eff_limits['monthly']
-    if monthly_used + float(total) > monthly_limit:
-        messages.error(request, f'Exceeds monthly limit of KES {monthly_limit:,.0f}.')
-        return redirect('withdraw')
-
-    _check_aml_velocity(wallet, amount)
-
-    # Risk #16: enhanced verification for large bank transfers
-    if amount > Decimal('100000'):
-        messages.warning(request, 'Large transfers may require additional verification. Our team will contact you if needed.')
-
-    kes_balance = wallet.get_kes_balance()
-    if total > Decimal(str(kes_balance)):
-        messages.error(request, f'Insufficient balance. Available: KES {kes_balance:,.2f}')
-        return redirect('withdraw')
-
-    # Sandbox: mock bank withdrawal
-    if _sandbox.is_sandbox(wallet):
-        result = _sandbox.mock_bank_withdraw(wallet, amount,
-                    bank_name=bank_name, account_number=account_number,
-                    account_name=account_name)
-        if result['status'] == 'completed':
-            messages.success(request, f'🧪 Sandbox: KES {amount:,.2f} bank withdrawal simulated to {bank_name} ({result["receipt"]}).')
-        else:
-            messages.error(request, f'🧪 Sandbox error: {result["message"]}')
-        return redirect('withdraw')
-
-    pesalink_ref = 'PL' + uuid.uuid4().hex[:12].upper()
-    try:
-        with db_transaction.atomic():
-            _debit_balance(wallet, 'KES', total, 'bank_withdraw',
-                           fee=fee, idempotency_key=pesalink_ref,
-                           bank_name=bank_name, bank_account=account_number)
-            BankTransaction.objects.create(
-                wallet=wallet,
-                pesalink_ref=pesalink_ref,
-                amount=amount,
-                bank_name=bank_name,
-                account_number=account_number,
-                account_name=account_name,
-                status='pending',
-                transaction_type='bank_withdraw',
-                timeout_at=timezone.now() + timezone.timedelta(hours=4),
-            )
-        messages.success(request, f'Bank transfer of KES {amount:,.2f} to {bank_name} is being processed. Reference: {pesalink_ref}')
-    except Exception:
-        logger.exception('Bank withdraw failed')
-        try:
-            _refund_balance(wallet, 'KES', total, pesalink_ref)
-        except Exception:
-            logger.exception('Refund also failed')
-        messages.error(request, 'Withdrawal failed. Your balance has been restored.')
-
-    return redirect('withdraw')
-
-
-# ─────────────────────────────────────────────
-# Bank — unified deposit + withdrawal page
-# ─────────────────────────────────────────────
-
-@wallet_required
-def bank_view(request, wallet):
-    """Unified bank page — shows both deposit and withdrawal."""
-    kes_balance = wallet.get_kes_balance()
-    return render(request, 'wallet/bank.html', {
-        'wallet':           wallet,
-        'kes_balance':      kes_balance,
-        'bank_choices':     BANK_CHOICES,
-        'bank_withdraw_fee': BANK_WITHDRAW_FEE,
-        'rates_stale':      rates_are_stale(),
-    })
-
-
-
-
-@wallet_required
-def stk_query_view(request, wallet):
-    """Risk #02: STK query only reads status — never credits independently."""
-    checkout_id = request.GET.get('checkout_id', '')
-    if not checkout_id:
-        return JsonResponse({'status': 'error', 'message': 'Missing checkout_id'}, status=400)
-
-    try:
-        mpesa_txn = MpesaTransaction.objects.get(
-            checkout_request_id=checkout_id, wallet=wallet
-        )
-    except MpesaTransaction.DoesNotExist:
-        return JsonResponse({'status': 'not_found'}, status=404)
-
-    # Risk #02: only report status — callback is sole authority for crediting
-    return JsonResponse({'status': mpesa_txn.status, 'amount': str(mpesa_txn.amount)})
-
 
 # ─────────────────────────────────────────────
 # Exchange
@@ -1642,43 +1263,61 @@ def qr_pay_view(request, token):
             return render(request, 'wallet/qr_pay.html', {'req': req, 'token': token})
 
         reference = 'QR' + uuid.uuid4().hex[:10].upper()
+        client = FlutterwaveClient()
 
-        if rail == 'airtel':
-            try:
-                airtel_client = AirtelClient()
-                if not airtel_client.validate_ke_number(phone):
-                    messages.error(request, 'Please enter a valid Airtel Kenya number (073x, 075x, 078x).')
-                    return render(request, 'wallet/qr_pay.html', {'req': req, 'token': token})
-                airtel_client.collection_request(
-                    phone=phone, amount=float(amount),
-                    ref=req.wallet.wallet_id, idempotency_key=reference,
+        try:
+            if rail in ('mpesa', 'airtel'):
+                # Mobile money STK push via Flutterwave
+                network = 'MPESA' if rail == 'mpesa' else 'AIRTEL'
+                tx_ref  = f'kwallet_qr_{reference}'
+                client.initiate_mobile_money(
+                    phone=phone, amount=float(amount), currency='KES',
+                    tx_ref=tx_ref, network=network,
+                    email='noreply@kwallet.ke',
+                )
+                FlutterwaveTransaction.objects.create(
+                    wallet=req.wallet, tx_ref=tx_ref,
+                    channel=rail, amount=amount, currency='KES',
+                    phone=phone, direction='in', status='pending',
+                    timeout_at=timezone.now() + timezone.timedelta(minutes=30),
                 )
                 if req.single_use:
                     req.status = 'paid'
                     req.save()
                 return render(request, 'wallet/qr_pay_pending.html', {
                     'phone': phone, 'amount': amount,
-                    'reference': reference, 'token': token, 'rail': 'Airtel Money',
+                    'reference': reference, 'token': token,
+                    'rail': 'M-Pesa' if rail == 'mpesa' else 'Airtel Money',
                 })
-            except Exception:
-                messages.error(request, 'Airtel Money payment initiation failed. Please try again.')
-        else:
-            try:
-                client = MpesaClient()
-                client.stk_push(
-                    phone=phone, amount=float(amount),
-                    account_ref=req.wallet.wallet_id,
-                    transaction_desc=f'KWallet QR {req.note or token[:8]}',
+            else:
+                # Card / bank transfer — hosted Flutterwave checkout
+                tx_ref = f'kwallet_qr_{reference}'
+                result = client.create_payment_link(
+                    amount=float(amount), currency='KES',
+                    customer_email='noreply@kwallet.ke',
+                    customer_name=phone or 'KWallet Customer',
+                    customer_phone=phone,
+                    tx_ref=tx_ref,
+                    description=f'QR payment — {req.note or token[:8]}',
+                    payment_options='card,banktransfer',
+                )
+                FlutterwaveTransaction.objects.create(
+                    wallet=req.wallet, tx_ref=tx_ref,
+                    channel='card', amount=amount, currency='KES',
+                    phone=phone, direction='in', status='pending',
+                    raw_payload=result,
+                    timeout_at=timezone.now() + timezone.timedelta(minutes=30),
                 )
                 if req.single_use:
                     req.status = 'paid'
                     req.save()
-                return render(request, 'wallet/qr_pay_pending.html', {
-                    'phone': phone, 'amount': amount,
-                    'reference': reference, 'token': token, 'rail': 'M-Pesa',
-                })
-            except Exception:
-                messages.error(request, 'M-Pesa payment initiation failed. Please try again.')
+                pay_url = result.get('data', {}).get('link', '')
+                if pay_url:
+                    return redirect(pay_url)
+                messages.error(request, 'Could not create payment link. Please try again.')
+        except Exception:
+            logger.exception('QR payment initiation failed')
+            messages.error(request, 'Payment initiation failed. Please try again.')
 
     return render(request, 'wallet/qr_pay.html', {'req': req, 'token': token})
 
