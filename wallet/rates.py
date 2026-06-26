@@ -117,6 +117,8 @@ def get_rates() -> dict:
 
 
 def get_pair_rate(from_curr: str, to_curr: str) -> float:
+    if from_curr == to_curr:
+        return 1.0  # Identity rate — no conversion needed
     rates = get_rates()
     key   = f'{from_curr}_{to_curr}'
     if key in rates:

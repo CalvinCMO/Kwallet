@@ -468,7 +468,7 @@ def flw_deposit_view(request, wallet):
         'balances':      balances,
         'home_currency': wallet.home_currency or 'KES',
         'rates_stale':   rates_are_stale(),
-        'flw_public_key': getattr(settings, 'FLUTTERWAVE_CONFIG', {}).get('PUBLIC_KEY', ''),
+        'flw_public_key': getattr(_settings, 'FLUTTERWAVE_CONFIG', {}).get('PUBLIC_KEY', ''),
     })
 
 
