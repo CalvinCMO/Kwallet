@@ -178,7 +178,7 @@ class WalletUser(AbstractBaseUser):
     last_activity      = models.DateTimeField(null=True, blank=True)
 
     USERNAME_FIELD  = 'phone'
-    REQUIRED_FIELDS = []
+    REQUIRED_FIELDS = ['pin']
     objects = WalletUserManager()
 
     class Meta:
