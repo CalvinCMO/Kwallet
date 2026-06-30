@@ -45,7 +45,7 @@ MIDDLEWARE = [
 # Set WALLET_SANDBOX_MODE=False in Railway env vars when you go live.
 # While True, all STK pushes, B2C, and bank webhooks are simulated locally —
 # no real money moves regardless of M-Pesa/Airtel environment setting.
-WALLET_SANDBOX_MODE = os.environ.get('WALLET_SANDBOX_MODE', 'False') == 'False'
+WALLET_SANDBOX_MODE = os.environ.get('WALLET_SANDBOX_MODE', 'True') == 'True'
 
 # How long (seconds) after a mock STK push the auto-confirm fires (simulates network delay)
 SANDBOX_CONFIRM_DELAY = int(os.environ.get('SANDBOX_CONFIRM_DELAY', '3'))
