@@ -161,7 +161,6 @@ class WalletUserManager(BaseUserManager):
 
 class WalletUser(AbstractBaseUser):
     phone        = models.CharField(max_length=20, unique=True)
-    pin          = models.CharField(max_length=128)  # Risk #03: bcrypt + pepper
     first_name   = models.CharField(max_length=80, blank=True)
     last_name    = models.CharField(max_length=80, blank=True)
     is_active    = models.BooleanField(default=True)
@@ -179,7 +178,7 @@ class WalletUser(AbstractBaseUser):
     last_activity      = models.DateTimeField(null=True, blank=True)
 
     USERNAME_FIELD  = 'phone'
-    REQUIRED_FIELDS = ['pin']
+    REQUIRED_FIELDS = []
     objects = WalletUserManager()
 
     class Meta:
