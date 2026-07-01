@@ -21,6 +21,13 @@ EXEMPT_PATHS = getattr(settings, 'SESSION_EXEMPT_PATHS', [
     '/mpesa/callback/', '/mpesa/b2c/result/', '/airtel/callback/',
     '/bank/webhook/', '/health/',
     '/static/', '/media/',
+    # Django admin has its own session/permission model and its own
+    # (much longer) usage pattern than the customer-facing wallet UI.
+    # Without this, IdleTimeoutMiddleware silently logs staff out of
+    # /admin/ after 5 minutes and redirects them to the customer /login/
+    # page with a confusing "logged out after 5 minutes" message that has
+    # nothing to do with the admin credentials themselves.
+    '/admin/',
 ])
 
 

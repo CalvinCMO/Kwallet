@@ -127,6 +127,19 @@ AUTH_USER_MODEL = 'wallet.WalletUser'
 LOGIN_URL  = '/login/'
 LOGIN_REDIRECT_URL = '/'
 
+# WalletUser stores its password as a bcrypt+pepper hash (see
+# WalletUser.set_pin/check_pin), NOT a Django-hasher hash. The default
+# ModelBackend calls user.check_password(), which uses Django's hashers
+# and will always reject a bcrypt hash — this silently broke Django admin
+# login (and anything else going through authenticate()) even with the
+# correct phone/PIN. PinBackend implements the matching bcrypt check and
+# must be registered here; ModelBackend is kept only as a fallback for any
+# legacy rows that were mistakenly written with set_password().
+AUTHENTICATION_BACKENDS = [
+    'wallet.backends.PinBackend',
+    'django.contrib.auth.backends.ModelBackend',
+]
+
 STATIC_URL  = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
