@@ -181,15 +181,18 @@ AIRTEL_CONFIG = {
     'ALLOWED_CALLBACK_IPS':  os.environ.get('AIRTEL_CALLBACK_IPS', '').split(','),
 }
 
-# ── Flutterwave config ──
-# Keys from https://dashboard.flutterwave.com → Settings → API Keys
+# ── Flutterwave config (v4 / OAuth2) ──
+# Credentials from https://dashboard.flutterwave.com → v4 Developer toggle →
+# Settings → API Keys (generates a Client ID + Client Secret, not a static
+# secret key — v4 uses OAuth2 client_credentials, see wallet/flutterwave.py)
 # Webhook: set https://<your-domain>/flw/webhook/ in FLW dashboard → Webhooks
 # Redirect: set https://<your-domain>/deposit/card/return/ in FLW Inline config
 FLUTTERWAVE_CONFIG = {
-    'SECRET_KEY':       os.environ.get('FLW_SECRET_KEY', ''),       # sk_test_... / sk_live_...
-    'PUBLIC_KEY':       os.environ.get('FLW_PUBLIC_KEY', ''),       # FLWPUBK_TEST-... / FLWPUBK-...
-    'ENCRYPTION_KEY':   os.environ.get('FLW_ENCRYPTION_KEY', ''),   # 12-char key from dashboard
-    # Risk #05: must match "Secret Hash" set in FLW dashboard → Webhooks
+    'CLIENT_ID':        os.environ.get('FLW_CLIENT_ID', ''),
+    'CLIENT_SECRET':     os.environ.get('FLW_CLIENT_SECRET', ''),
+    'ENCRYPTION_KEY':   os.environ.get('FLW_ENCRYPTION_KEY', ''),   # used for card-field encryption in v4
+    # Risk #05: must match "Secret Hash" set in FLW dashboard → Webhooks.
+    # v4 uses this to HMAC-SHA256 the raw webhook body (see verify_webhook_signature).
     'WEBHOOK_SECRET':   os.environ.get('FLW_WEBHOOK_SECRET', ''),
     # URL Flutterwave redirects to after hosted payment (card / bank transfer)
     'REDIRECT_URL':     os.environ.get('FLW_REDIRECT_URL', 'https://yourdomain.com/deposit/card/return/'),
@@ -201,6 +204,9 @@ FLUTTERWAVE_CONFIG = {
     'DEV_DISABLE_SSL':  os.environ.get('FLW_DEV_DISABLE_SSL', 'false').lower() == 'true',
     # Set USE_MOCK=True to skip live API calls (sandbox wallets always mock regardless)
     'USE_MOCK':         os.environ.get('FLW_USE_MOCK', 'true').lower() == 'true',
+    # 'sandbox' or 'live' — selects v4's base URL (v4 splits these completely,
+    # unlike v3's single host + sk_test_/sk_live_ key prefix)
+    'ENVIRONMENT':      os.environ.get('FLW_ENVIRONMENT', 'sandbox'),
     # Risk #05: Flutterwave webhook IP prefixes — verify from FLW docs periodically
     'ALLOWED_WEBHOOK_IPS': [ip for ip in os.environ.get('FLW_WEBHOOK_IPS', '').split(',') if ip],
 }

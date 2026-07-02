@@ -563,17 +563,21 @@ def flw_webhook(request):
         logger.warning(f'FLW webhook rejected: IP {remote_ip} not in allowlist')
         return HttpResponseForbidden('Forbidden')
 
-    # Risk #05: secret-hash verification
-    secret_hash = request.META.get('HTTP_VERIF_HASH', '')
-    if not client.verify_webhook_signature(request.body, secret_hash):
-        logger.warning('FLW webhook rejected: invalid verif-hash')
+    # Risk #05: HMAC-SHA256 signature verification (v4 header — was verif-hash in v3)
+    signature = request.META.get('HTTP_FLUTTERWAVE_SIGNATURE', '')
+    if not client.verify_webhook_signature(request.body, signature):
+        logger.warning('FLW webhook rejected: invalid flutterwave-signature')
         return HttpResponseForbidden('Forbidden')
 
     try:
-        payload = json.loads(request.body)
+        raw_payload = json.loads(request.body)
     except json.JSONDecodeError:
         return HttpResponseBadRequest('Invalid JSON')
 
+    # v4 sends {'type', 'data': {...}} instead of v3's {'event', 'data': {...}}
+    # with different status/field names — normalize back to v3 shape so the
+    # rest of this function (written against v3) needs no further changes.
+    payload   = client.normalize_webhook_payload(raw_payload)
     event     = payload.get('event', '')
     data      = payload.get('data', {})
     tx_ref    = data.get('tx_ref', '') or data.get('reference', '')
