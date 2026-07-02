@@ -627,11 +627,13 @@
           <a href="{% url 'add_currency' %}"    class="dd-item" role="menuitem"><span class="dd-icon">💱</span> Add Currency</a>
         </div>
 
+        {% if GLOBAL_SANDBOX_MODE or wallet.is_sandbox %}
         <div class="dd-divider"></div>
 
         <div class="dd-section">
           <a href="{% url 'sandbox_panel' %}" class="dd-item" role="menuitem"><span class="dd-icon">🧪</span> Test Panel</a>
         </div>
+        {% endif %}
 
         <div class="dd-divider"></div>
 

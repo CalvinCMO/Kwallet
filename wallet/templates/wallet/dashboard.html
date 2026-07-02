@@ -55,8 +55,10 @@
             <a href="{% url 'p2p' %}"             style="display:flex;align-items:center;gap:.55rem;padding:.45rem .7rem;border-radius:var(--r-sm);font-size:.8rem;font-weight:500;color:var(--ink-2);text-decoration:none;" onmouseover="this.style.background='var(--teal-50)'" onmouseout="this.style.background=''"><span style="width:18px;text-align:center;">↔️</span> Transfer</a>
             <a href="{% url 'qr_payment_list' %}" style="display:flex;align-items:center;gap:.55rem;padding:.45rem .7rem;border-radius:var(--r-sm);font-size:.8rem;font-weight:500;color:var(--ink-2);text-decoration:none;" onmouseover="this.style.background='var(--teal-50)'" onmouseout="this.style.background=''"><span style="width:18px;text-align:center;">📲</span> QR Pay</a>
             <a href="{% url 'add_currency' %}"    style="display:flex;align-items:center;gap:.55rem;padding:.45rem .7rem;border-radius:var(--r-sm);font-size:.8rem;font-weight:500;color:var(--ink-2);text-decoration:none;" onmouseover="this.style.background='var(--teal-50)'" onmouseout="this.style.background=''"><span style="width:18px;text-align:center;">💱</span> Add Currency</a>
+            {% if GLOBAL_SANDBOX_MODE or wallet.is_sandbox %}
             <div style="height:1px;background:var(--border);margin:.3rem .4rem;"></div>
             <a href="{% url 'sandbox_panel' %}"   style="display:flex;align-items:center;gap:.55rem;padding:.45rem .7rem;border-radius:var(--r-sm);font-size:.8rem;font-weight:500;color:var(--ink-2);text-decoration:none;" onmouseover="this.style.background='var(--teal-50)'" onmouseout="this.style.background=''"><span style="width:18px;text-align:center;">🧪</span> Test Panel</a>
+            {% endif %}
             <div style="height:1px;background:var(--border);margin:.3rem .4rem;"></div>
             <a href="{% url 'logout' %}"           style="display:flex;align-items:center;gap:.55rem;padding:.45rem .7rem;border-radius:var(--r-sm);font-size:.8rem;font-weight:500;color:var(--red);text-decoration:none;" onmouseover="this.style.background='var(--red-lt)'" onmouseout="this.style.background=''"><span style="width:18px;text-align:center;">🚪</span> Log out</a>
           </div>

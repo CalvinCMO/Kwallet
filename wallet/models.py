@@ -1,11 +1,14 @@
 import hmac
 import hashlib
+import logging
 import re
 from django.db import models
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager
 from django.utils import timezone
 from django.conf import settings
 import bcrypt
+
+logger = logging.getLogger(__name__)
 
 
 # ─────────────────────────────────────────────
@@ -27,6 +30,7 @@ TRANSACTION_TYPES = [
     ('exchange',        'Currency Exchange'),
     ('p2p_send',        'Transfer Sent'),
     ('p2p_receive',     'Transfer Received'),
+    ('sandbox_reset',   'Sandbox Balance Reset (KYC Verified)'),
 ]
 
 TRANSACTION_STATUSES = [
@@ -292,23 +296,81 @@ class Wallet(models.Model):
     def save(self, *args, **kwargs):
         """
         Auto-stamp kyc_verified_at the first time kyc_status flips to 'verified',
-        and trigger a limit-tier sync so WalletLimit cached values stay fresh.
+        flip the wallet from sandbox → live and wipe sandbox play-money balances
+        to zero at that same moment, and trigger a limit-tier sync so WalletLimit
+        cached values stay fresh.
         """
+        just_verified = False
         if self.pk:
             try:
                 prev = Wallet.objects.get(pk=self.pk)
                 if prev.kyc_status != 'verified' and self.kyc_status == 'verified':
                     if not self.kyc_verified_at:
                         self.kyc_verified_at = timezone.now()
+                    just_verified = True
             except Wallet.DoesNotExist:
                 pass
         super().save(*args, **kwargs)
+
+        if just_verified:
+            self._activate_live_wallet()
+
         # Sync WalletLimit cache after any save (creates it if missing)
         try:
             limit, _ = WalletLimit.objects.get_or_create(wallet=self)
             limit.sync_from_tier()
         except Exception:
             pass  # Never let a limit sync error break the save
+
+    def _activate_live_wallet(self):
+        """
+        Fires exactly once — the instant kyc_status transitions into 'verified'.
+
+        Every new wallet is created in sandbox mode (mock rails, play money).
+        The moment KYC is successfully verified, the wallet "graduates":
+          1. is_sandbox is flipped off, so all future deposits/withdrawals/
+             exchanges route through the real payment rails (M-Pesa, Airtel,
+             bank, Flutterwave) instead of the mock ones.
+          2. Every sandbox currency balance is reset to zero — none of the
+             mock/testing money carries over into the live wallet.
+          3. A 'sandbox_reset' transaction record is kept per currency that
+             had a non-zero balance, purely as an audit trail showing what
+             was cleared and why.
+
+        After this runs, the wallet is live but empty — the user only sees
+        real money once they make a real deposit.
+        """
+        from django.db import transaction as db_transaction
+
+        with db_transaction.atomic():
+            balances = list(
+                self.currency_balances.select_for_update().filter(balance__gt=0)
+            )
+            for cb in balances:
+                Transaction.objects.create(
+                    wallet=self,
+                    transaction_type='sandbox_reset',
+                    currency=cb.currency,
+                    amount=cb.balance,
+                    fee=0,
+                    status='completed',
+                    details=f'Sandbox {cb.currency} balance cleared — wallet switched to live after KYC verification.',
+                )
+
+            # Zero every balance — sandbox play money never carries into live mode.
+            self.currency_balances.update(balance=0)
+
+            # Flip this wallet off sandbox rails, regardless of the global
+            # WALLET_SANDBOX_MODE setting (which only controls brand-new
+            # wallets / the environment default).
+            if self.is_sandbox:
+                self.is_sandbox = False
+                Wallet.objects.filter(pk=self.pk).update(is_sandbox=False)
+
+        logger.info(
+            '[KYC] Wallet %s verified — switched sandbox → live, %d currency balance(s) reset to zero.',
+            self.wallet_id, len(balances),
+        )
 
     def __str__(self):
         return f"Wallet({self.wallet_id}) — {self.phone}"

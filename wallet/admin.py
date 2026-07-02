@@ -48,10 +48,11 @@ class WalletUserAdmin(admin.ModelAdmin):
 @admin.register(Wallet)
 class WalletAdmin(admin.ModelAdmin):
     list_display  = ('wallet_id', 'wallet_user', 'phone', 'home_currency',
-                     'kyc_status_badge', 'kes_balance_display', 'created_at')
-    list_filter   = ('kyc_status', 'home_currency')
+                     'kyc_status_badge', 'sandbox_badge', 'kes_balance_display', 'created_at')
+    list_filter   = ('kyc_status', 'is_sandbox', 'home_currency')
     search_fields = ('phone', 'wallet_id', 'wallet_user__first_name', 'wallet_user__last_name')
     readonly_fields = ('wallet_id', 'created_at', 'updated_at', 'kyc_verified_at')
+    actions = ['approve_kyc', 'reject_kyc']
 
     @admin.display(description='KYC')
     def kyc_status_badge(self, obj):
@@ -62,10 +63,34 @@ class WalletAdmin(admin.ModelAdmin):
         return format_html('<span style="color:{};font-weight:600">{} {}</span>',
                            c, i, obj.kyc_status.title())
 
+    @admin.display(description='Mode')
+    def sandbox_badge(self, obj):
+        if obj.is_sandbox:
+            return format_html('<span style="color:#b8860b;font-weight:600">🧪 Sandbox</span>')
+        return format_html('<span style="color:#0a7d2c;font-weight:600">💳 Live</span>')
+
     @admin.display(description='KES Balance')
     def kes_balance_display(self, obj):
         bal = obj.get_kes_balance()
         return f'KES {bal:,.2f}'
+
+    @admin.action(description='Approve KYC (switches wallet to LIVE, resets sandbox balances to zero)')
+    def approve_kyc(self, request, queryset):
+        approved = 0
+        for wallet in queryset:
+            if wallet.kyc_status != 'verified':
+                wallet.kyc_status = 'verified'
+                wallet.save()  # triggers Wallet._activate_live_wallet()
+                approved += 1
+        self.message_user(
+            request,
+            f'{approved} wallet(s) approved — switched to live mode with sandbox balances reset to zero.'
+        )
+
+    @admin.action(description='Reject KYC')
+    def reject_kyc(self, request, queryset):
+        updated = queryset.exclude(kyc_status='verified').update(kyc_status='rejected')
+        self.message_user(request, f'{updated} wallet(s) marked as rejected.')
 
 
 # ── CurrencyBalance ──────────────────────────────────────────────────────

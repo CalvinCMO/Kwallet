@@ -223,7 +223,6 @@ def register_view(request):
                     first_name=first_name, last_name=last_name,
                 )
                 wallet_id = 'KW' + uuid.uuid4().hex[:10].upper()
-                from django.conf import settings as _dj_settings
                 wallet = Wallet.objects.create(
                     wallet_id=wallet_id,
                     wallet_user=user,
@@ -232,9 +231,15 @@ def register_view(request):
                     home_currency='',  # No default — user selects on first login
                     kyc_status='pending',
                     country=country,
-                    is_sandbox=getattr(_dj_settings, 'WALLET_SANDBOX_MODE', True),
+                    # Every new wallet always starts in sandbox mode, regardless
+                    # of the global WALLET_SANDBOX_MODE env setting. It only
+                    # switches to live once KYC is verified (see Wallet.save()).
+                    is_sandbox=True,
                 )
-                WalletLimit.objects.create(wallet=wallet)
+                # NOTE: Wallet.save() already auto-creates the WalletLimit row
+                # (via get_or_create) and syncs it from the tier table, so no
+                # explicit WalletLimit.objects.create() is needed here — doing
+                # so would violate the OneToOneField uniqueness constraint.
 
             auth_login(request, user, backend='django.contrib.auth.backends.ModelBackend')
             user.register_session(request.session.session_key)
