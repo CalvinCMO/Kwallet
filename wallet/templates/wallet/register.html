@@ -3,9 +3,11 @@
 {% block content %}
 <div class="page-auth">
   <div class="auth-hero">
-    <div class="auth-logo">🌍</div>
+    <div class="auth-logo">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 7v10M9 9.5c0-1.4 1.3-2.5 3-2.5s3 1.1 3 2.5-1.3 2.2-3 2.5c-1.7.3-3 1.1-3 2.5s1.3 2.5 3 2.5 3-1.1 3-2.5"/></svg>
+    </div>
     <h1 class="auth-h1">Create account</h1>
-    <p class="auth-sub">Pan-African multi-currency wallet</p>
+    <p class="auth-sub">Join KWallet today</p>
   </div>
 
   {% if messages %}
@@ -18,18 +20,27 @@
       <div class="fg2">
         <div class="fg" style="margin-bottom:0">
           <label class="fl">First Name</label>
-          <input class="fi" type="text" name="first_name" required placeholder="Jane">
+          <div class="fi-wrap">
+            <svg class="fi-icon" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            <input class="fi" type="text" name="first_name" required placeholder="Jane">
+          </div>
           {% if form.first_name.errors %}<div class="fe">{{ form.first_name.errors|join:", " }}</div>{% endif %}
         </div>
         <div class="fg" style="margin-bottom:0">
           <label class="fl">Last Name</label>
-          <input class="fi" type="text" name="last_name" required placeholder="Wanjiru">
+          <div class="fi-wrap">
+            <svg class="fi-icon" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            <input class="fi" type="text" name="last_name" required placeholder="Doe">
+          </div>
           {% if form.last_name.errors %}<div class="fe">{{ form.last_name.errors|join:", " }}</div>{% endif %}
         </div>
       </div>
       <div class="fg" style="margin-top:.85rem">
         <label class="fl">Phone Number</label>
-        <input class="fi" type="tel" name="phone" required placeholder="07XX XXX XXX">
+        <div class="fi-wrap">
+          <svg class="fi-icon" viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.362 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.338 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+          <input class="fi" type="tel" name="phone" required placeholder="+254 7XX XXX XXX">
+        </div>
         <div class="fh">Safaricom or Airtel Kenya number starting with 07 or 01</div>
         {% if form.phone.errors %}<div class="fe">{{ form.phone.errors|join:", " }}</div>{% endif %}
       </div>
@@ -43,14 +54,26 @@
       </div>
       <div class="fg">
         <label class="fl">PIN <span class="field-hint">(6 digits)</span></label>
-        <input class="fi" type="password" name="pin" minlength="6" maxlength="6" required placeholder="••••••">
+        <div class="fi-wrap">
+          <svg class="fi-icon" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          <input class="fi" id="reg-pin" type="password" name="pin" minlength="6" maxlength="6" required placeholder="••••••">
+          <button type="button" class="fi-toggle" onclick="kwTogglePin('reg-pin', this)" aria-label="Show PIN">
+            <svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          </button>
+        </div>
         {# Risk #03 & #17: 6-digit minimum enforced #}
         <div class="fh">Minimum 6 digits. Stored with bcrypt + server-side pepper.</div>
         {% if form.pin.errors %}<div class="fe">{{ form.pin.errors|join:", " }}</div>{% endif %}
       </div>
       <div class="fg" style="margin-bottom:1rem">
         <label class="fl">Confirm PIN</label>
-        <input class="fi" type="password" name="pin_confirm" minlength="6" maxlength="6" required placeholder="••••••">
+        <div class="fi-wrap">
+          <svg class="fi-icon" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          <input class="fi" id="reg-pin-confirm" type="password" name="pin_confirm" minlength="6" maxlength="6" required placeholder="••••••">
+          <button type="button" class="fi-toggle" onclick="kwTogglePin('reg-pin-confirm', this)" aria-label="Show PIN">
+            <svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          </button>
+        </div>
         {% if form.pin_confirm.errors %}<div class="fe">{{ form.pin_confirm.errors|join:", " }}</div>{% endif %}
       </div>
       <div class="ibox" style="margin-bottom:1rem">
@@ -62,4 +85,12 @@
 
   <div class="auth-foot">Already have an account? <a href="{% url 'login' %}">Sign in</a></div>
 </div>
+<script>
+function kwTogglePin(id, btn) {
+  const el = document.getElementById(id);
+  const showing = el.type === 'text';
+  el.type = showing ? 'password' : 'text';
+  btn.setAttribute('aria-label', showing ? 'Show PIN' : 'Hide PIN');
+}
+</script>
 {% endblock %}
