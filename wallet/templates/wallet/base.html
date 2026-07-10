@@ -9,11 +9,11 @@
   <style>
     /* ── TOKENS ── */
     :root {
-      --teal:        #161B26;
-      --teal-dk:     #0A0D13;
-      --teal-lt:     #4B5563;
-      --teal-50:     #F1F2F4;
-      --teal-100:    #E2E4E9;
+      --teal:        #1DA57A;
+      --teal-dk:     #0F6E56;
+      --teal-lt:     #5DCAA5;
+      --teal-50:     #E6F7F1;
+      --teal-100:    #B3E8D5;
       --red:         #E24B4A;
       --red-lt:      #FDEAEA;
       --airtel:      #E11D48;
@@ -24,18 +24,18 @@
       --amber-lt:    #FEF3C7;
       --blue:        #2563EB;
       --blue-lt:     #EFF6FF;
-      --bg:          #F5F6F8;
+      --bg:          #F0F4F3;
       --surface:     #FFFFFF;
-      --ink:         #0F172A;
-      --ink-2:       #334155;
-      --ink-3:       #64748B;
-      --ink-4:       #94A3B8;
-      --border:      #E4E7EC;
-      --shadow-sm:   0 1px 3px rgba(15,23,42,.05);
-      --shadow-md:   0 8px 24px rgba(15,23,42,.08);
-      --r-sm:        10px;
+      --ink:         #0D1B12;
+      --ink-2:       #3B4D43;
+      --ink-3:       #6B7D73;
+      --ink-4:       #9EADA6;
+      --border:      #E2EAE6;
+      --shadow-sm:   0 1px 3px rgba(0,0,0,.06);
+      --shadow-md:   0 4px 16px rgba(0,0,0,.08);
+      --r-sm:        8px;
       --r-md:        14px;
-      --r-lg:        22px;
+      --r-lg:        20px;
       --r-xl:        28px;
       --r-full:      999px;
     }
@@ -240,7 +240,7 @@
     .home-name       { font-size: 24px; font-weight: 800; color: var(--ink); letter-spacing: -.03em; }
     .dash-avatar {
       width:40px; height:40px; border-radius:50%;
-      background: var(--teal);
+      background:linear-gradient(135deg,var(--teal),var(--teal-dk));
       color:#fff; font-weight:800; font-size:.9rem;
       display:flex; align-items:center; justify-content:center;
       flex-shrink:0;
@@ -255,7 +255,7 @@
     /* ── PORTFOLIO CARD ── */
     .portfolio-card {
       margin: 0 16px;
-      background: var(--teal);
+      background: linear-gradient(130deg, #2DC98A 0%, #0F7A5A 100%);
       border-radius: var(--r-xl);
       padding: 26px 24px 22px;
       color: #fff;
@@ -376,9 +376,8 @@
       font-family: 'Inter', sans-serif; font-size: .85rem; font-weight: 600;
       cursor: pointer; transition: all .18s; white-space: nowrap; text-decoration: none;
     }
-    .btn-primary { background: var(--teal); color: #fff; box-shadow: 0 1px 2px rgba(15,23,42,.12); }
-    .btn-primary:hover { background: var(--teal-dk); }
-    .btn-primary:disabled, .btn-primary.is-disabled { background: #9CA3AF; box-shadow: none; cursor: not-allowed; }
+    .btn-primary { background: linear-gradient(135deg, var(--teal), var(--teal-dk)); color: #fff; box-shadow: 0 2px 10px rgba(29,165,122,.28); }
+    .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 18px rgba(29,165,122,.38); }
     .btn-withdraw { background: linear-gradient(135deg,#BE185D,#9D174D); color:#fff; }
     .btn-withdraw:hover { transform:translateY(-1px); }
     .btn-airtel   { background: var(--airtel); color: #fff; }
@@ -395,32 +394,17 @@
     .btn-block { width: 100%; border-radius: var(--r-md) !important; padding: .8rem !important; }
 
     /* ── FORMS ── */
-    .fg { margin-bottom: 1.1rem; }
-    .fl { display: block; font-size: .88rem; font-weight: 700; letter-spacing: 0; text-transform: none; color: var(--ink); margin-bottom: .5rem; }
+    .fg { margin-bottom: 1rem; }
+    .fl { display: block; font-size: .68rem; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--ink-3); margin-bottom: .35rem; }
     .field-hint { text-transform:none; letter-spacing:0; font-weight:400; color:var(--ink-4); }
     .fi, .fs {
-      width: 100%; background: var(--surface);
+      width: 100%; background: var(--bg);
       border: 1.5px solid var(--border); border-radius: var(--r-sm);
-      color: var(--ink); font-family: 'Inter', sans-serif; font-size: .95rem;
-      padding: .8rem 1rem; outline: none;
+      color: var(--ink); font-family: 'Inter', sans-serif; font-size: .9rem;
+      padding: .65rem 1rem; outline: none;
       transition: border-color .15s, box-shadow .15s;
     }
-    .fi:focus, .fs:focus { border-color: var(--teal); box-shadow: 0 0 0 3px rgba(15,23,42,.08); background: var(--surface); }
-    /* Icon-adorned inputs (auth pages) */
-    .fi-wrap { position: relative; }
-    .fi-wrap .fi { padding-left: 2.6rem; }
-    .fi-wrap .fi-icon {
-      position: absolute; left: .95rem; top: 50%; transform: translateY(-50%);
-      width: 18px; height: 18px; stroke: var(--ink-4); fill: none; stroke-width: 1.8;
-      stroke-linecap: round; stroke-linejoin: round; pointer-events: none;
-    }
-    .fi-wrap .fi-toggle {
-      position: absolute; right: .9rem; top: 50%; transform: translateY(-50%);
-      background: none; border: none; padding: 4px; cursor: pointer; line-height: 0;
-    }
-    .fi-wrap .fi-toggle svg { width: 19px; height: 19px; stroke: var(--ink-4); fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-    .fi-wrap .fi-toggle:hover svg { stroke: var(--ink-2); }
-    .fi-wrap:has(.fi-toggle) .fi { padding-right: 2.6rem; }
+    .fi:focus, .fs:focus { border-color: var(--teal); box-shadow: 0 0 0 3px rgba(29,165,122,.12); background: var(--surface); }
     .fi-airtel:focus { border-color: var(--airtel) !important; box-shadow: 0 0 0 3px rgba(225,29,72,.12) !important; }
     .fi-bank:focus   { border-color: var(--bank) !important;   box-shadow: 0 0 0 3px rgba(29,78,216,.12) !important; }
     .fh { font-size: .68rem; color: var(--ink-4); margin-top: .25rem; }
@@ -430,7 +414,7 @@
     .errorlist li { font-size: .7rem; color: var(--red); margin-top: .25rem; }
 
     /* ── CARDS ── */
-    .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 1.75rem 1.5rem; box-shadow: var(--shadow-sm); }
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 1.5rem; box-shadow: var(--shadow-sm); }
     .card-sm { padding: 1rem 1.25rem; }
     .card-title { font-size: .95rem; font-weight: 700; color: var(--ink); margin-bottom: .9rem; }
 
@@ -452,24 +436,19 @@
     .msg-info    { background: var(--blue-lt);  border-color: #bfdbfe;          color: #1e40af; }
 
     /* ── AUTH PAGES ── */
-    .auth-hero   { text-align: center; margin-bottom: 2rem; }
+    .auth-hero   { text-align: center; margin-bottom: 1.75rem; }
     .auth-logo   {
-      width: 72px; height: 72px;
-      background: var(--teal);
-      color: #fff;
-      border-radius: 20px; display: flex; align-items: center; justify-content: center;
-      font-size: 2rem; font-weight: 800; margin: 0 auto 1.5rem;
-      box-shadow: 0 4px 14px rgba(15,23,42,.18);
+      width: 60px; height: 60px;
+      background: linear-gradient(135deg, var(--teal), var(--teal-dk));
+      border-radius: 16px; display: flex; align-items: center; justify-content: center;
+      font-size: 1.7rem; margin: 0 auto 1rem;
+      box-shadow: 0 4px 18px rgba(29,165,122,.28);
     }
-    .auth-logo svg { width: 32px; height: 32px; stroke: #fff; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-    .auth-h1  { font-size: 1.85rem; font-weight: 800; color: var(--ink); letter-spacing: -.03em; }
-    .auth-sub { color: var(--ink-3); margin-top: .35rem; font-size: .92rem; }
-    .auth-foot{ text-align: center; margin-top: 1.4rem; font-size: .85rem; color: var(--ink-3); }
-    .auth-foot a { color: var(--ink); font-weight: 700; }
+    .auth-h1  { font-size: 1.75rem; font-weight: 800; color: var(--ink); letter-spacing: -.04em; }
+    .auth-sub { color: var(--ink-3); margin-top: .25rem; font-size: .86rem; }
+    .auth-foot{ text-align: center; margin-top: 1.1rem; font-size: .8rem; color: var(--ink-3); }
+    .auth-foot a { color: var(--teal-dk); font-weight: 600; }
     .auth-foot a:hover { text-decoration: underline; }
-    .auth-forgot { text-align: center; margin-top: .9rem; font-size: .85rem; }
-    .auth-forgot a { color: var(--ink-3); }
-    .auth-forgot a:hover { color: var(--ink); }
 
     /* ── INFO BOXES ── */
     .ibox     { background: var(--bg); border: 1px solid var(--border); border-radius: var(--r-sm); padding: .8rem 1rem; font-size: .8rem; color: var(--ink-3); margin-bottom: 1rem; }
