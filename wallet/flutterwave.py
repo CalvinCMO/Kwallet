@@ -277,22 +277,22 @@ class FlutterwaveClient:
             }
 
         payload = {
-            'amount':    amount,
-            'currency':  currency,
-            'reference': tx_ref,
-            'payment_method': {
-                'type': 'mobile_money',
-                'mobile_money': {
-                    'country_code':  'KE',
-                    'network':       network.upper(),
-                    'phone_number':  phone,
-                },
-            },
-            'customer': {
-                'email': email,
-                'phone': {'country_code': 'KE', 'number': phone},
-            },
-        }
+    'amount':    amount,
+    'currency':  currency,
+    'reference': tx_ref,
+    'payment_method': {
+        'type': 'mobile_money',
+        'mobile_money': {
+            'country_code':  '254',   # was 'KE' — must be the numeric dialing code
+            'network':       network.upper(),
+            'phone_number':  phone,
+        },
+    },
+    'customer': {
+        'email': email,
+        'phone': {'country_code': '254', 'number': phone},   # was 'KE'
+    },
+}
         data = self._post('/orchestration/direct-charges', payload, idempotency_key=tx_ref)
 
         next_action = data.get('data', {}).get('next_action', {})
